@@ -1,24 +1,25 @@
 /*
  * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2010-2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
- *
- * included from libwebsockets.h
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 /*! \defgroup extensions Extension related functions
@@ -168,8 +169,8 @@ lws_set_extension_option(struct lws *wsi, const char *ext_name,
  */
 LWS_VISIBLE LWS_EXTERN int LWS_WARN_UNUSED_RESULT
 lws_ext_parse_options(const struct lws_extension *ext, struct lws *wsi,
-		       void *ext_user, const struct lws_ext_options *opts,
-		       const char *o, int len);
+		      void *ext_user, const struct lws_ext_options *opts,
+		      const char *o, int len);
 
 /** lws_extension_callback_pm_deflate() - extension for RFC7692
  *
@@ -183,11 +184,12 @@ lws_ext_parse_options(const struct lws_extension *ext, struct lws *wsi,
  *
  * Built-in callback implementing RFC7692 permessage-deflate
  */
-LWS_EXTERN
-int lws_extension_callback_pm_deflate(
-	struct lws_context *context, const struct lws_extension *ext,
-	struct lws *wsi, enum lws_extension_callback_reasons reason,
-	void *user, void *in, size_t len);
+LWS_EXTERN int
+lws_extension_callback_pm_deflate(struct lws_context *context,
+				  const struct lws_extension *ext,
+				  struct lws *wsi,
+				  enum lws_extension_callback_reasons reason,
+				  void *user, void *in, size_t len);
 
 /*
  * The internal exts are part of the public abi

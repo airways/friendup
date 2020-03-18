@@ -1,25 +1,28 @@
 /*
  * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2010-2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
-#include "core/private.h"
+#include "private-lib-core.h"
 
 #if defined(LWS_WITH_MBEDTLS) || (defined(OPENSSL_VERSION_NUMBER) && \
 				  OPENSSL_VERSION_NUMBER >= 0x10002000L)
@@ -56,7 +59,8 @@ lws_context_init_alpn(struct lws_vhost *vhost)
 					vhost->tls.alpn_ctx.data,
 					sizeof(vhost->tls.alpn_ctx.data) - 1);
 
-	SSL_CTX_set_alpn_select_cb(vhost->tls.ssl_ctx, alpn_cb, &vhost->tls.alpn_ctx);
+	SSL_CTX_set_alpn_select_cb(vhost->tls.ssl_ctx, alpn_cb,
+				   &vhost->tls.alpn_ctx);
 #else
 	lwsl_err(
 		" HTTP2 / ALPN configured but not supported by OpenSSL 0x%lx\n",
@@ -72,6 +76,9 @@ lws_tls_server_conn_alpn(struct lws *wsi)
 	const unsigned char *name = NULL;
 	char cstr[10];
 	unsigned len;
+
+	if (!wsi->tls.ssl)
+		return 0;
 
 	SSL_get0_alpn_selected(wsi->tls.ssl, &name, &len);
 	if (!len) {
@@ -94,12 +101,26 @@ lws_tls_server_conn_alpn(struct lws *wsi)
 	return 0;
 }
 
+#if defined(LWS_WITH_SERVER)
+
+static void
+lws_sul_tls_cb(lws_sorted_usec_list_t *sul)
+{
+	struct lws_context_per_thread *pt = lws_container_of(sul,
+			struct lws_context_per_thread, sul_tls);
+
+	lws_tls_check_all_cert_lifetimes(pt->context);
+
+	__lws_sul_insert(&pt->pt_sul_owner, &pt->sul_tls,
+			 (lws_usec_t)24 * 3600 * LWS_US_PER_SEC);
+}
+
 LWS_VISIBLE int
 lws_context_init_server_ssl(const struct lws_context_creation_info *info,
 			    struct lws_vhost *vhost)
 {
 	struct lws_context *context = vhost->context;
-	struct lws wsi;
+	struct lws *wsi = context->pt[0].fake_wsi;
 
 	if (!lws_check_opt(info->options,
 			   LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT)) {
@@ -109,14 +130,14 @@ lws_context_init_server_ssl(const struct lws_context_creation_info *info,
 	}
 
 	/*
-	 * If he is giving a cert filepath, take it as a sign he wants to use
+	 * If he is giving a server cert, take it as a sign he wants to use
 	 * it on this vhost.  User code can leave the cert filepath NULL and
 	 * set the LWS_SERVER_OPTION_CREATE_VHOST_SSL_CTX option itself, in
 	 * which case he's expected to set up the cert himself at
 	 * LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS, which
 	 * provides the vhost SSL_CTX * in the user parameter.
 	 */
-	if (info->ssl_cert_filepath)
+	if (info->ssl_cert_filepath || info->server_ssl_cert_mem)
 		vhost->options |= LWS_SERVER_OPTION_CREATE_VHOST_SSL_CTX;
 
 	if (info->port != CONTEXT_PORT_NO_LISTEN) {
@@ -138,9 +159,9 @@ lws_context_init_server_ssl(const struct lws_context_creation_info *info,
 	 * give him a fake wsi with context + vhost set, so he can use
 	 * lws_get_context() in the callback
 	 */
-	memset(&wsi, 0, sizeof(wsi));
-	wsi.vhost = vhost; /* not a real bound wsi */
-	wsi.context = context;
+	wsi->vhost = vhost; /* not a real bound wsi */
+	wsi->context = context;
+	wsi->protocol = NULL;
 
 	/*
 	 * as a server, if we are requiring clients to identify themselves
@@ -156,12 +177,12 @@ lws_context_init_server_ssl(const struct lws_context_creation_info *info,
 	 * allowing it to verify incoming client certs
 	 */
 	if (vhost->tls.use_ssl) {
-		if (lws_tls_server_vhost_backend_init(info, vhost, &wsi))
+		if (lws_tls_server_vhost_backend_init(info, vhost, wsi))
 			return -1;
 
 		lws_tls_server_client_cert_verify_config(vhost);
 
-		if (vhost->protocols[0].callback(&wsi,
+		if (vhost->protocols[0].callback(wsi,
 			    LWS_CALLBACK_OPENSSL_LOAD_EXTRA_SERVER_VERIFY_CERTS,
 			    vhost->tls.ssl_ctx, vhost, 0))
 			return -1;
@@ -170,17 +191,24 @@ lws_context_init_server_ssl(const struct lws_context_creation_info *info,
 	if (vhost->tls.use_ssl)
 		lws_context_init_alpn(vhost);
 
+	/* check certs once a day */
+
+	context->pt[0].sul_tls.cb = lws_sul_tls_cb;
+	__lws_sul_insert(&context->pt[0].pt_sul_owner, &context->pt[0].sul_tls,
+			 (lws_usec_t)24 * 3600 * LWS_US_PER_SEC);
+
 	return 0;
 }
+#endif
 
 LWS_VISIBLE int
 lws_server_socket_service_ssl(struct lws *wsi, lws_sockfd_type accept_fd)
 {
 	struct lws_context *context = wsi->context;
-	struct lws_vhost *vh;
 	struct lws_context_per_thread *pt = &context->pt[(int)wsi->tsi];
-	int n;
+	struct lws_vhost *vh;
         char buf[256];
+	int n;
 
         (void)buf;
 
@@ -244,19 +272,36 @@ lws_server_socket_service_ssl(struct lws *wsi, lws_sockfd_type accept_fd)
 			goto fail;
 		}
 
-		lws_latency_pre(context, wsi);
-
 		if (wsi->vhost->tls.allow_non_ssl_on_ssl_port) {
 
 			n = recv(wsi->desc.sockfd, (char *)pt->serv_buf,
 				 context->pt_serv_buf_size, MSG_PEEK);
 
-		/*
-		 * optionally allow non-SSL connect on SSL listening socket
-		 * This is disabled by default, if enabled it goes around any
-		 * SSL-level access control (eg, client-side certs) so leave
-		 * it disabled unless you know it's not a problem for you
-		 */
+			/*
+			 * We have LWS_SERVER_OPTION_ALLOW_NON_SSL_ON_SSL_PORT..
+			 * this just means don't hang up on him because of no
+			 * tls hello... what happens next is driven by
+			 * additional option flags:
+			 *
+			 * none: fail the connection
+			 *
+			 * LWS_SERVER_OPTION_REDIRECT_HTTP_TO_HTTPS:
+			 *     Destroy the TLS, issue a redirect using plaintext
+			 *     http (this may not be accepted by a client that
+			 *     has visited the site before and received an STS
+			 *     header).
+			 *
+			 * LWS_SERVER_OPTION_ALLOW_HTTP_ON_HTTPS_LISTENER:
+			 *     Destroy the TLS, continue and serve normally
+			 *     using http
+			 *
+			 * LWS_SERVER_OPTION_FALLBACK_TO_APPLY_LISTEN_ACCEPT_CONFIG:
+			 *     Destroy the TLS, apply whatever role and protocol
+			 *     were told in the vhost info struct
+			 *     .listen_accept_role / .listen_accept_protocol and
+			 *     continue with that
+			 */
+
 			if (n >= 1 && pt->serv_buf[0] >= ' ') {
 				/*
 				* TLS content-type for Handshake is 0x16, and
@@ -272,16 +317,40 @@ lws_server_socket_service_ssl(struct lws *wsi, lws_sockfd_type accept_fd)
 
 				lws_tls_server_abort_connection(wsi);
 				/*
-				 * care... this creates wsi with no ssl
-				 * when ssl is enabled and normally
-				 * mandatory
+				 * care... this creates wsi with no ssl when ssl
+				 * is enabled and normally mandatory
 				 */
 				wsi->tls.ssl = NULL;
-				if (lws_check_opt(context->options,
-				    LWS_SERVER_OPTION_REDIRECT_HTTP_TO_HTTPS))
+
+				if (lws_check_opt(wsi->vhost->options,
+				    LWS_SERVER_OPTION_REDIRECT_HTTP_TO_HTTPS)) {
+					lwsl_info("%s: redirecting from http "
+						  "to https\n", __func__);
 					wsi->tls.redirect_to_https = 1;
-				lwsl_debug("accepted as non-ssl\n");
-				goto accepted;
+					goto notls_accepted;
+				}
+
+				if (lws_check_opt(wsi->vhost->options,
+				LWS_SERVER_OPTION_ALLOW_HTTP_ON_HTTPS_LISTENER)) {
+					lwsl_info("%s: allowing unencrypted "
+						  "http service on tls port\n",
+						  __func__);
+					goto notls_accepted;
+				}
+
+				if (lws_check_opt(wsi->vhost->options,
+		    LWS_SERVER_OPTION_FALLBACK_TO_APPLY_LISTEN_ACCEPT_CONFIG)) {
+					if (lws_http_to_fallback(wsi, NULL, 0))
+						goto fail;
+					lwsl_info("%s: allowing non-tls "
+						  "fallback\n", __func__);
+					goto notls_accepted;
+				}
+
+				lwsl_notice("%s: client did not send a valid "
+					    "tls hello (default vhost %s)\n",
+					    __func__, wsi->vhost->name);
+				goto fail;
 			}
 			if (!n) {
 				/*
@@ -314,21 +383,17 @@ lws_server_socket_service_ssl(struct lws *wsi, lws_sockfd_type accept_fd)
 #if defined(LWS_WITH_STATS)
 		/* only set this the first time around */
 		if (!wsi->accept_start_us)
-			wsi->accept_start_us = lws_time_in_microseconds();
+			wsi->accept_start_us = lws_now_usecs();
 #endif
 		errno = 0;
-		lws_stats_atomic_bump(wsi->context, pt,
-				      LWSSTATS_C_SSL_CONNECTIONS_ACCEPT_SPIN, 1);
+		lws_stats_bump(pt, LWSSTATS_C_SSL_ACCEPT_SPIN, 1);
 		n = lws_tls_server_accept(wsi);
-		lws_latency(context, wsi,
-			"SSL_accept LRS_SSL_ACK_PENDING\n", n, n == 1);
 		lwsl_info("SSL_accept says %d\n", n);
 		switch (n) {
 		case LWS_SSL_CAPABLE_DONE:
 			break;
 		case LWS_SSL_CAPABLE_ERROR:
-			lws_stats_atomic_bump(wsi->context, pt,
-					      LWSSTATS_C_SSL_CONNECTIONS_FAILED, 1);
+			lws_stats_bump(pt, LWSSTATS_C_SSL_CONNECTIONS_FAILED, 1);
 	                lwsl_info("SSL_accept failed socket %u: %d\n",
 	                		wsi->desc.sockfd, n);
 			wsi->socket_is_permanently_unusable = 1;
@@ -338,17 +403,25 @@ lws_server_socket_service_ssl(struct lws *wsi, lws_sockfd_type accept_fd)
 			return 0;
 		}
 
-		lws_stats_atomic_bump(wsi->context, pt,
-				      LWSSTATS_C_SSL_CONNECTIONS_ACCEPTED, 1);
+		lws_stats_bump(pt, LWSSTATS_C_SSL_CONNECTIONS_ACCEPTED, 1);
 #if defined(LWS_WITH_STATS)
 		if (wsi->accept_start_us)
-			lws_stats_atomic_bump(wsi->context, pt,
-				      LWSSTATS_MS_SSL_CONNECTIONS_ACCEPTED_DELAY,
-				      lws_time_in_microseconds() - wsi->accept_start_us);
-		wsi->accept_start_us = lws_time_in_microseconds();
+			lws_stats_bump(pt,
+				      LWSSTATS_US_SSL_ACCEPT_LATENCY_AVG,
+				      lws_now_usecs() -
+					      wsi->accept_start_us);
+		wsi->accept_start_us = lws_now_usecs();
 #endif
-
-accepted:
+#if defined(LWS_WITH_DETAILED_LATENCY)
+		if (context->detailed_latency_cb) {
+			wsi->detlat.type = LDLT_TLS_NEG_SERVER;
+			wsi->detlat.latencies[LAT_DUR_PROXY_RX_TO_ONWARD_TX] =
+				lws_now_usecs() -
+				wsi->detlat.earliest_write_req_pre_write;
+			wsi->detlat.latencies[LAT_DUR_USERCB] = 0;
+			lws_det_lat_cb(wsi->context, &wsi->detlat);
+		}
+#endif
 
 		/* adapt our vhost to match the SNI SSL_CTX that was chosen */
 		vh = context->vhost_list;
@@ -375,6 +448,11 @@ accepted:
 	default:
 		break;
 	}
+
+	return 0;
+
+notls_accepted:
+	lwsi_set_state(wsi, LRS_ESTABLISHED);
 
 	return 0;
 

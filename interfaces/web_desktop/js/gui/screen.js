@@ -105,10 +105,7 @@ Screen = function ( flags, initObject )
 			"<div class=\"Box\" id=\"Statusbar\">" +
 			"	<div id=\"Taskbar\">" +
 			"	</div>" + 
-			"	<div id=\"StatusBox\">" +
-			"	</div>" +
-			//"   <div id=\"Tray\"><div class=\"Microphone IconSmall fa-microphone-slash\"></div>" +
-			"   <div id=\"Tray\"></div>" +
+			"	<div id=\"StatusBox\">" +			
 			"   </div>" +
 			"</div>";
 	}
@@ -155,7 +152,7 @@ Screen = function ( flags, initObject )
 		div.innerHTML = "" +
 		"<div class=\"TitleBar\">" +
 		"	<div class=\"Right\">" +
-		"		<div class=\"ScreenList MousePointer\"><img src=\"gfx/system/window_depth.png\"/></div>" +
+		"		<div class=\"ScreenList MousePointer BorderLeft\"></div>" +
 		"	</div>" +
 		"	<div class=\"Left\">" +
 		"		<div class=\"Info\">" + this._flags['title'] + "</div>" + ex +
@@ -229,11 +226,11 @@ Screen = function ( flags, initObject )
 					{
 						var rows = parseInt( self._flags['vrows'] );
 						if( rows <= 0 ) rows = 1;
-						cnt.style.height = 'calc(' + ( 100 * rows ) + '% - ' + cntTop + 'px)';
+						cnt.style.height = '100%';
 					}
 					else
 					{
-						cnt.style.height = 'calc(100% - ' + cntTop + 'px)';
+						cnt.style.height = '100%';
 					}
 				}
 			}
@@ -295,8 +292,11 @@ Screen = function ( flags, initObject )
 			( !t.id && t.parentNode.id == 'DoorsScreen' && t.classList && t.classList.contains( 'ScreenContent' ) )
 		)
 		{
-			_DeactivateWindows();
-			Workspace.toggleStartMenu( false );
+			if( !isMobile )
+			{
+				_DeactivateWindows();
+				Workspace.toggleStartMenu( false );
+			}
 		}
 	}
 	if( this.iframe )
@@ -404,41 +404,49 @@ Screen = function ( flags, initObject )
 				screens[a]._screenoverlay.style.pointerEvents = 'none';
 			}
 		}
-		window.mouseMoveFunc = function ( e )
+		// If we have multiple screens, allow screen dragging
+		if( ge( 'Screens' ).getElementsByClassName( 'Screen' ).length > 1 )
 		{
-			var my = e.clientY ? e.clientY : e.pageYOffset;
-			var mx = e.clientX ? e.clientX : e.pageXOffset;
-			var ty = my - window.currentScreen.offy;
-			if ( ty < 0 ) ty = 0;
-			if ( ty >= GetWindowHeight () ) ty = GetWindowHeight () - 1;
-			
-			div.style.transform = 'translate3d(0,' + ty + 'px,0)';
-			div.screenOffsetTop = ty;
-			
-			// Enable all screen overlays
-			var screenc = ge ( 'Screens' );
-			var screens = screenc.getElementsByTagName ( 'div' );
-			for( var a = 0; a < screens.length; a++ )
+			window.mouseMoveFunc = function ( e )
 			{
-				if( !screens[a].className ) continue;
-				if( screens[a].parentNode != screenc ) continue;
-				screens[a]._screenoverlay.style.display = '';
-				screens[a]._screenoverlay.style.pointerEvents = 'all';
+				var my = e.clientY ? e.clientY : e.pageYOffset;
+				var mx = e.clientX ? e.clientX : e.pageXOffset;
+				var ty = my - window.currentScreen.offy;
+				if ( ty < 0 ) ty = 0;
+				if ( ty >= GetWindowHeight () ) ty = GetWindowHeight () - 1;
+			
+				div.style.transform = 'translate3d(0,' + ty + 'px,0)';
+				div.screenOffsetTop = ty;
+			
+				// Enable all screen overlays
+				var screenc = ge ( 'Screens' );
+				var screens = screenc.getElementsByTagName ( 'div' );
+				for( var a = 0; a < screens.length; a++ )
+				{
+					if( !screens[a].className ) continue;
+					if( screens[a].parentNode != screenc ) continue;
+					screens[a]._screenoverlay.style.display = '';
+					screens[a]._screenoverlay.style.pointerEvents = 'all';
+				}
 			}
+		}
+		// Just pop the screen back
+		else
+		{
+			div.style.transition = 'transform 0.25s';
+			div.style.transform = 'translate3d(0,0px,0)';
+			div.screenOffsetTop = 0;
+			setTimeout( function()
+			{
+				div.style.transition = '';
+			}, 250 );
 		}
 		var t = e.target ? e.target : e.srcElement;
 		
-		// Hitting the screen list..
-		if( t.classList && t.classList.contains( 'ScreenList' ) )
-		{
-			self.screenCycle();
-		}
-		
-		// Don't cancel bubble here..
+		// Clicking on the extra widget
 		if( t.classList && t.classList.contains( 'Extra' ) )
 		{
 			Workspace.calendarClickEvent();
-			return cancelBubble( e );
 		}
 		
 		return cancelBubble ( e );
@@ -449,6 +457,7 @@ Screen = function ( flags, initObject )
 		window.currentScreen = this.parentNode;
 		CheckScreenTitle();
 	}
+	
 	// Alias clicking the screen
 	div.onmouseup = function( e )
 	{ 
@@ -481,7 +490,10 @@ Screen = function ( flags, initObject )
 		// We are registering a click inside
 		if( !( t != scrn.contentDiv && t != scrn.contentDiv.parentNode ) )
 		{	
-			_DeactivateWindows();
+			if( !isMobile )
+			{
+				_DeactivateWindows();
+			}
 			var tp = e.changedTouches[0];
 			if( !scrn.touch ) scrn.touch = {};
 			scrn.touch.moving = true;
@@ -506,7 +518,10 @@ Screen = function ( flags, initObject )
 			{
 				if( t.classList.contains( 'ScreenContent' ) )
 				{
-					_DeactivateWindows();
+					if( !isMobile )
+					{
+						_DeactivateWindows();
+					}
 					ExposeWindows();
 					ExposeScreens();
 				}
@@ -544,6 +559,34 @@ Screen = function ( flags, initObject )
 		{
 			scrn.touchCycled = true;
 			scrn.screenCycle();
+		}
+		else if( isMobile && diffx < -100 && !scrn.moving )
+		{
+			if( Friend.GUI.responsiveViewPage < Friend.GUI.responsiveViewPageCount )
+			{
+				scrn.moving = true;
+				setTimeout( function()
+				{
+					scrn.moving = false;
+				}, 500 );
+				Friend.GUI.responsiveViewPage++;
+				var px = Math.round( scrn.contentDiv.parentNode.offsetWidth * -( Friend.GUI.responsiveViewPage ) ) + 'px';
+				scrn.contentDiv.style.transform = 'translate3d(' + px + ',0,0)';
+			}
+		}
+		else if( isMobile && diffx > 100 && !scrn.moving )
+		{
+			if( Friend.GUI.responsiveViewPage > 0 )
+			{
+				scrn.moving = true;
+				setTimeout( function()
+				{
+					scrn.moving = false;
+				}, 500 );
+				Friend.GUI.responsiveViewPage--;
+				var px = Math.round( scrn.contentDiv.parentNode.offsetWidth * -( Friend.GUI.responsiveViewPage ) ) + 'px';
+				scrn.contentDiv.style.transform = 'translate3d(' + px + ',0,0)';
+			}
 		}
 		// Show the dock!
 		else if( diffy < 0 && parseInt( ct ) == 0 )
@@ -763,6 +806,8 @@ Screen = function ( flags, initObject )
 			var msg = {}; if( packet ) for( var a in packet ) msg[a] = packet[a];
 			msg.command = 'setbodycontent';
 			msg.locale = Workspace.locale;
+			msg,cachedAppData = _applicationBasics;
+			msg.dosDrivers = Friend.dosDrivers;
 			// Authid is important, should not be left out if it is available
 			if( !msg.authId )
 			{
@@ -786,7 +831,7 @@ Screen = function ( flags, initObject )
 			else msg.data = content;
 			if( msg.data && msg.data.split )
 				msg.data = msg.data.split( /system\:/i ).join( '/webclient/' );
-			if( !msg.origin ) msg.origin = document.location.href;
+			if( !msg.origin ) msg.origin = '*'; // TODO: should be this - document.location.href;
 			ifr.contentWindow.postMessage( JSON.stringify( msg ), Workspace.protocol + '://' + ifr.src.split( '//' )[1].split( '/' )[0] );
 			if( callback ) callback();
 			
@@ -797,7 +842,7 @@ Screen = function ( flags, initObject )
 		// Position content
 		ifr.style.position = 'absolute';
 		ifr.style.border = 'none';
-		ifr.style.height = document.body.offsetHeight - this._titleBar.offsetHeight + 'px';
+		ifr.style.height = this._titleBar ? ( 'calc(100% - ' + ( this._titleBar.offsetHeight + 'px' ) + ')' ) : '100%';
 		ifr.style.width = '100%';
 		ifr.style.left = '0';
 		ifr.style.top = this._titleBar.offsetHeight + 'px';
@@ -854,11 +899,11 @@ Screen = function ( flags, initObject )
 		// We're on a road trip..
 		if( !( friendU && ( friendU == targetU || !targetU ) ) )
 		{
-			ifr.sandbox = 'allow-same-origin allow-forms allow-scripts';
+			ifr.sandbox = DEFAULT_SANDBOX_ATTRIBUTES;
 		}
 		
 		// Allow sandbox flags
-		var sbx = ifr.getAttribute('sandbox') ? ifr.getAttribute('sandbox') : '';
+		var sbx = ifr.getAttribute( 'sandbox' ) ? ifr.getAttribute( 'sandbox' ) : '';
 		sbx = ('' + sbx).split( ' ' );
 		if( this.flags && this.flags.allowPopups )
 		{
@@ -883,7 +928,7 @@ Screen = function ( flags, initObject )
 					base:          base,
 					applicationId: appId,
 					filePath:      filePath,
-					origin:        document.location.href,
+					origin:        '*', // TODO: should be this - document.location.href,
 					screenId:      w.externScreenId,
 					theme:         Workspace.theme,
 					clipboard:     Friend.clipboard
@@ -948,7 +993,7 @@ Screen = function ( flags, initObject )
 		if( this.iframe && this.iframe.contentWindow )
 		{
 			var u = Workspace.protocol + '://' + this.iframe.src.split( '//' )[1].split( '/' )[0];
-			var origin = event.origin && event.origin != 'null' ? event.origin : u;
+			var origin = u;
 			if( !dataObject.applicationId && this._screen.applicationId )
 			{
 				dataObject.applicationId = this._screen.applicationId;

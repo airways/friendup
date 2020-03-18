@@ -19,7 +19,11 @@
 *                                                                              *
 *****************************************************************************©*/
 
-global $SqlDatabase;
+global $SqlDatabase, $Config, $Logger;
+
+require_once( 'php/classes/dbio.php' );
+require_once( 'php/classes/door.php' );
+require_once( 'php/classes/file.php' );
 
 if( !function_exists( 'findInSearchPaths' ) )
 {
@@ -40,11 +44,14 @@ if( !function_exists( 'findInSearchPaths' ) )
 	}
 }
 
+error_reporting(E_ALL & ~E_NOTICE);
+ini_set('display_errors', 1);
+
 if( $args->args->id > 0 )
 {
 	if( $ug = $SqlDatabase->FetchObject( '
 		SELECT 
-			g.*, s.Data 
+			g.*, s.Data
 		FROM 
 			`FUserGroup` g, 
 			`FSetting` s 
@@ -66,10 +73,34 @@ if( $args->args->id > 0 )
 		
 		$ug->Data = ( $ug->Data ? json_decode( $ug->Data ) : false );
 		
+		// Try to get wallpaper
+		$wallpaper = new dbIO( 'FMetaData' );
+		$wallpaper->DataID = $ug->ID;
+		$wallpaper->DataTable = 'FSetting';
+		$wallpaper->Key = 'UserTemplateSetupWallpaper';
+		$wallpaperContent = false;
+		if( !$wallpaper->Load() )
+		{
+			$wallpaper = false;
+		}
+		else
+		{
+			if( !( $wallpaperContent = file_get_contents( $wallpaper->ValueString ) ) )
+			{
+				$wallpaper = false;
+			}
+		}
+		
 		if( $users )
 		{
 			foreach( $users as $uid )
 			{
+				// Make sure the user exists!
+				$theUser = new dbIO( 'FUser' );
+				$theUser->load( $uid );
+				if( !$theUser->ID ) continue;
+				
+				// Great, we have a user
 				if( $ug->Data && $uid )
 				{
 					// Language ----------------------------------------------------------------------------------------
@@ -87,6 +118,132 @@ if( $args->args->id > 0 )
 						$lang->Save();
 					}
 		
+					// Wallpaper -----------------------------------------------
+					// TODO: Support other filesystems than SQLDrive! (right now, not possible!)
+					
+					if( $wallpaper )
+					{
+						$fnam = $wallpaper->ValueString;
+						$fnam = explode( '/', $fnam );
+						$fnam = end( $fnam );
+						$ext  = explode( '.', $fnam );
+						$fnam = $ext[0];
+						$ext  = $ext[1];
+						
+						$f = new dbIO( 'Filesystem' );
+						$f->UserID = $uid;
+						$f->Name   = 'Home';
+						$f->Type   = 'SQLDrive';
+						$f->Server = 'localhost';
+						if( !$f->Load() )
+						{
+							$f->ShortDescription = 'My data volume';
+							$f->Mounted = '1';
+							
+							// TODO: Enable this when we have figured out a better way to handle firstlogin.defaults.php if Home: is created it fucks up the first login procedure ...
+							
+							//$f->Save();
+							
+							$f->ID = 0;
+						}
+						
+						if( $f->ID > 0 && $fnam && $ext && $theUser->Name )
+						{
+							// Make sure we have wallpaper folder
+							$fl = new dbIO( 'FSFolder' );
+							$fl->FilesystemID = $f->ID;
+							$fl->UserID = $uid;
+							$fl->Name = 'Wallpaper';
+							$fl->FolderID = 0;
+							if( !$fl->Load() )
+							{
+								$fl->DateCreated = date( 'Y-m-d H:i:s' );
+								$fl->DateModified = $fl->DateCreated;
+								
+								$fl->Save();
+							}
+							
+							$fi = new dbIO( 'FSFile' );
+							$fi->Filename = ( 'default_wallpaper_' . $fl->FilesystemID . '_' . $fl->UserID . '.jpg' );
+							$fi->FolderID = $fl->ID;
+							$fi->FilesystemID = $f->ID;
+							$fi->UserID = $uid;
+							if( $fi->Load() && $fi->DiskFilename )
+							{
+								if( file_exists( $Config->FCUpload . $fi->DiskFilename ) )
+								{
+									unlink( $Config->FCUpload . $fi->DiskFilename );
+								}
+							}
+							
+							// Find disk filename
+							$uname = str_replace( array( '..', '/', ' ' ), '_', $theUser->Name );
+							if( !file_exists( $Config->FCUpload . $uname ) )
+							{
+								mkdir( $Config->FCUpload . $uname );
+							}
+							
+							while( file_exists( $Config->FCUpload . $uname . '/' . $fnam . '.' . $ext ) )
+							{
+								$fnam = ( $fnam . rand( 0, 999999 ) );
+							}
+							
+							if( $fp = fopen( $Config->FCUpload . $uname . '/' . $fnam . '.' . $ext, 'w+' ) )
+							{
+								fwrite( $fp, $wallpaperContent );
+								fclose( $fp );
+								
+								
+								
+								$fi->DiskFilename = ( $uname . '/' . $fnam . '.' . $ext );
+								$fi->Filesize = filesize( $wallpaper->ValueString );
+								$fi->DateCreated = date( 'Y-m-d H:i:s' );
+								$fi->DateModified = $fi->DateCreated;
+								$fi->Save();
+								
+								
+								
+								// Set the wallpaper in config
+								$s = new dbIO( 'FSetting' );
+								$s->UserID = $uid;
+								$s->Type = 'system';
+								$s->Key = 'wallpaperdoors';
+								$s->Load();
+								$s->Data = '"Home:Wallpaper/' . $fi->Filename . '"';
+								$s->Save();
+								
+								
+								
+								// Fill Wallpaper app with settings and set default wallpaper
+								$wp = new dbIO( 'FSetting' );
+								$wp->UserID = $uid;
+								$wp->Type = 'system';
+								$wp->Key = 'imagesdoors';
+								if( $wp->Load() && $wp->Data )
+								{
+									$data = substr( $wp->Data, 1, -1 );
+	
+									if( $data && !strstr( $data, '"Home:Wallpaper/' . $fi->Filename . '"' ) )
+									{
+										if( $json = json_decode( $data, true ) )
+										{
+											$json[] = ( 'Home:Wallpaper/' . $fi->Filename );
+			
+											if( $data = json_encode( $json ) )
+											{
+												$wp->Data = stripslashes( '"' . $data . '"' );
+												$wp->Save();
+											}
+										}
+									}
+								}
+								
+							}
+							
+							
+						}
+					}
+					
 					// Startup -----------------------------------------------------------------------------------------
 		
 					if( isset( $ug->Data->startups ) )
@@ -115,6 +272,32 @@ if( $args->args->id > 0 )
 						$them->Load();
 						$them->Data = $ug->Data->theme;
 						$them->Save();
+					}
+					
+					if( $ug->Data->themeconfig && $ug->Data->theme )
+					{
+						// 3. Check and update look and feel config!
+						
+						$them = new dbIO( 'FSetting' );
+						$them->UserID = $uid;
+						$them->Type = 'system';
+						$them->Key = 'themedata_' . strtolower( $ug->Data->theme );
+						$them->Load();
+						$them->Data = json_encode( $ug->Data->themeconfig );
+						$them->Save(); 
+					}
+					
+					if( $ug->Data->workspacecount )
+					{
+						// 3. Check and update look and feel workspace numbers!
+						
+						$them = new dbIO( 'FSetting' );
+						$them->UserID = $uid;
+						$them->Type = 'system';
+						$them->Key = 'workspacecount';
+						$them->Load();
+						$them->Data = $ug->Data->workspacecount;
+						$them->Save(); 
 					}
 					
 					// Software ----------------------------------------------------------------------------------------

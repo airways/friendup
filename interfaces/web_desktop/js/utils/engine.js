@@ -198,6 +198,25 @@ function GeByClass ( nm, el )
 	return out.length == 1 ? out[0] : out;
 }
 
+var _is_touch_device;
+function isTouchDevice()
+{
+	if( _is_touch_device === false || _is_touch_device === true ) return _is_touch_device;
+	try
+	{
+		document.createEvent( 'TouchEvent' );  
+		window.isTablet = true;
+		_is_touch_device = true;
+		return true;
+	}
+	catch ( e )
+	{
+		_is_touch_device = false;
+		return false;  
+	}
+}
+isTouchDevice();
+
 // Generate a unique id
 function UniqueId ()
 {
@@ -210,14 +229,26 @@ function UniqueId ()
 	return el;
 }
 
+function UniqueHash()
+{
+	return SHA256( "" + ( Math.random() * 999 ) + ( Math.random() * 999 ) + ( Math.random() * 999 ) + ( new Date() ).getTime() );
+}
+
 // set a cookie
 function SetCookie( key, value, expiry )
 {
-	var t = new Date ();
-	if ( !expiry ) expiry = 1;
-	expiry = new Date( t.getTime() + ( expiry*1000*60*60*24 ) );
-	document.cookie = key + '=' + escape ( value ) + ';expires='+expiry.toGMTString();
-	return;
+	try
+	{
+		var t = new Date ();
+		if ( !expiry ) expiry = 1;
+		expiry = new Date( t.getTime() + ( expiry*1000*60*60*24 ) );
+		document.cookie = key + '=' + escape ( value ) + ';expires='+expiry.toGMTString();
+		return;
+	}
+	catch( e )
+	{
+	}
+	return false;
 }
 function DelCookie ( key ) { document.cookie = key + '=;'; }
 
@@ -225,15 +256,22 @@ function DelCookie ( key ) { document.cookie = key + '=;'; }
 function GetCookie( key )
 {
 	if ( !key ) return false;
-	var c = document.cookie.split ( ';' );
-	for ( var a = 0; a < c.length; a++ )
+	try
 	{
-		c[a] = c[a].split ( /^\s+|\s+$/g ).join ( '' ); // rm whitespace
-		var v = c[a].split ( '=' );
-		if ( v[0] == key )
+		var c = document.cookie.split ( ';' );
+		for ( var a = 0; a < c.length; a++ )
 		{
-			return unescape ( v[1] );
+			c[a] = c[a].split ( /^\s+|\s+$/g ).join ( '' ); // rm whitespace
+			var v = c[a].split ( '=' );
+			if ( v[0] == key )
+			{
+				return unescape ( v[1] );
+			}
 		}
+		return false;
+	}
+	catch( e )
+	{
 	}
 	return false;
 }
@@ -296,7 +334,8 @@ function hideKeyboard()
 		field.focus();
 		setTimeout( function()
 		{
-			document.body.removeChild( field );
+			if( field.parentNode == document.body )
+				document.body.removeChild( field );
 		}, 500 );
 	}, 50 );
 }
@@ -2103,6 +2142,8 @@ function InitTabs( pdiv, tabCallback )
 	
 	var hasContainer = tabContainer;
 	
+	var setPageState = true;
+	
 	for( var a = 0; a < divs.length; a++ )
 	{
 		// Skip orphan tabs and out of bounds subelements
@@ -2123,8 +2164,13 @@ function InitTabs( pdiv, tabCallback )
 			divs[a].tabs = tabs; 
 			divs[a].pages = pages;
 			divs[a].index = tabs.length - 1;
-			divs[a].onclick = function ()
+			divs[a].onclick = function()
 			{
+				// Already active? Just return
+				if( this.classList.contains( 'TabActive' ) && this.pages[ this.index ].classList.contains( 'PageActive' ) ) return;
+				// Assume it is ok to activate this tab
+				var result = true;
+				
 				SetCookie ( 'Tabs' + this.pdiv.id, this.index );
 				this.classList.add( 'TabActive' );
 				var ind;
@@ -2136,11 +2182,14 @@ function InitTabs( pdiv, tabCallback )
 					}
 					else ind = b;
 				}
-				var result = true;
+				
 				if( tabCallback )
 				{
-					result = tabCallback( this, this.pages );
+					var r = tabCallback( this, this.pages );
+					if( r === false || r === true )
+						result = r;
 				}
+				
 				// Only continue if the tab callback has a positive result or doesn't exist
 				if( result )
 				{
@@ -2171,6 +2220,8 @@ function InitTabs( pdiv, tabCallback )
 						}
 					}
 				}
+				
+				// Do magic with resize
 				if( typeof ( AutoResizeWindow ) != 'undefined' )
 				{
 					var pdiv = this.pdiv;
@@ -2372,7 +2423,7 @@ function InitTabs( pdiv, tabCallback )
 	}
 	if( tabs.length && tabs[active] )
 	{
-		tabs[active].onclick();
+		tabs[active].click();
 	}
 }
 
@@ -2414,8 +2465,20 @@ function checkMobileBrowser()
 {
 	if( !document.body ) return setTimeout( checkMobileBrowser, 50 );
 	window.isMobile = checkMobile();
-	window.isTablet = checkTablet();
-	if( window.isMobile ) window.isTablet = false;
+	if( !window.isTablet )
+		window.isTablet = checkTablet() || isTouchDevice();
+	
+
+	if( window.isMobile && ( window.innerWidth <= 760 || window.innerHeight <= 500 ) )
+	{
+		if( !window.isTablet )
+			window.isTablet = false;
+	}
+	else if( window.isTablet )
+	{
+		window.isMobile = false;
+	}
+	
 	if( !window.isMobile && !window.isTablet )
 	{
 		if( window.isTouch || !document.getElementsByTagName( 'head' )[0].getAttribute( 'touchdesktop' ) )
@@ -2425,7 +2488,7 @@ function checkMobileBrowser()
 				navigator.userAgent.toLowerCase().indexOf( 'phone' ) > 0 ||
 				navigator.userAgent.toLowerCase().indexOf( 'pad' ) > 0 ||
 				navigator.userAgent.toLowerCase().indexOf( 'bowser' ) > 0 );
-	
+			
 			if( ( window.isMobile || navigator.userAgent.indexOf( 'Mobile' ) > 0 ) && window.innerWidth >= 1024 )
 			{
 				window.isTablet = true;
@@ -2433,6 +2496,14 @@ function checkMobileBrowser()
 			}
 		}
 	}
+	
+	// Ipads are always mobiles for apple users at least
+	if( navigator.userAgent.toLowerCase().indexOf( 'ipad' ) > 0 && typeof(Workspace) != 'undefined' && Workspace.loginUsername == 'applereview' )
+	{
+		//console.log( 'IPAD! ' + navigator.userAgent );
+		window.isMobile = true;
+	}
+	
 	window.isTouch = !!('ontouchstart' in window);
 	if( window.isMobile )
 	{
@@ -2451,10 +2522,12 @@ function checkMobileBrowser()
 		document.body.setAttribute( 'settopbox', 'playstation' );
 		window.isSettopBox = 'playstation';
 		if (typeof console  != "undefined") 
+		{
 			if (typeof console.log != 'undefined')
 				console.olog = console.log;
 			else
 				console.olog = function() {};
+		}
 		console.log = function(message) {
 			console.olog(message);
 			Notify( { title: 'Playstation error', text: message } );
@@ -2647,11 +2720,13 @@ function GetDeviceId()
 	var r = id + '_' + type + '_' + platform + '_' + __randDevId;
 
 	//application token is needed for iOS push notifications
-	if (typeof window.friendApp != "undefined"){
-                if (typeof window.friendApp.appToken != "undefined"){
-                        r = id + "_ios_app_" + friendApp.appToken;
-                }
-        }
+	if( typeof( window.friendApp ) != 'undefined' )
+	{
+		if( typeof( window.friendApp.appToken ) != 'undefined' )
+		{
+			r = id + '_ios_app_' + friendApp.appToken;
+		}
+	}
 	// Store the cookie for later use
 	SetCookie( 'deviceId', r );
 	

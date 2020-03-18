@@ -303,7 +303,7 @@ DataForm *SendMessageRFS( SpecialData *sd, DataForm *df )
 			BufStringDelete( bs );
 		}
 		
-		sd->sb->sl_SocketInterface.SocketClose( newsock );
+		sd->sb->sl_SocketInterface.SocketDelete( newsock );
 		
 		DEBUG("[SendMessageRFS] got reponse\n");
 		
@@ -385,7 +385,7 @@ DataForm *SendMessageRFSRelogin( SpecialData *sd, DataForm *df )
 						
 						BufStringDelete( bs );
 						
-						sd->sb->sl_SocketInterface.SocketClose( newsock );
+						sd->sb->sl_SocketInterface.SocketDelete( newsock );
 						
 						return SendMessageRFS( sd, df );
 					}
@@ -402,7 +402,7 @@ DataForm *SendMessageRFSRelogin( SpecialData *sd, DataForm *df )
 			BufStringDelete( bs );
 		}
 		
-		sd->sb->sl_SocketInterface.SocketClose( newsock );
+		sd->sb->sl_SocketInterface.SocketDelete( newsock );
 		
 		DEBUG("[SendMessageRFSRelogin] got reponse\n");
 		
@@ -547,7 +547,7 @@ FConnection *ConnectToServerRFS( SpecialData *sd, char *conname )
 	{
 		if( newsock != NULL )
 		{
-			sd->sb->sl_SocketInterface.SocketClose( newsock );
+			sd->sb->sl_SocketInterface.SocketDelete( newsock );
 		}
 	}
 	else
@@ -562,7 +562,7 @@ FConnection *ConnectToServerRFS( SpecialData *sd, char *conname )
 // Mount device
 //
 
-void *Mount( struct FHandler *s, struct TagItem *ti, User *usr )
+void *Mount( struct FHandler *s, struct TagItem *ti, User *usr, char **mountError )
 {
 	File *dev = NULL;
 	char *path = NULL;
@@ -685,13 +685,36 @@ void *Mount( struct FHandler *s, struct TagItem *ti, User *usr )
 		SpecialData *sd = FCalloc( 1, sizeof( SpecialData ) );
 		if( sd != NULL )
 		{
+			int tr = 20;
 			dev->f_SpecialData = sd;
 			sd->sb = sb;
 
 			sd->address = StringDuplicate( conname );
 			
 			FriendCoreManager *fcm = sb->fcm;
+			
+			while( fcm->fcm_CommServiceRemote == NULL )
+			{
+				sleep( 1 );
+				if( (tr--) <= 0 )
+				{
+					break;
+				}
+			}
+			
 			sd->csr = fcm->fcm_CommServiceRemote;
+			if( sd->csr == NULL )
+			{
+				if( dev->f_Name ){ FFree( dev->f_Name ); }
+				if( dev->f_Path ){ FFree( dev->f_Path ); }
+				if( sd->address ){ FFree( sd->address ); }
+				
+				FFree( sd );
+				FFree( dev );
+				dev = NULL;
+				FERROR("Cannot mount device, connection do not exist\n" );
+				return NULL;
+			}
 			sd->secured = fcm->fcm_CommServiceRemote->csr_secured;
 			sd->port = sd->csr->csr_port;
 			//sd->port = 6503;
@@ -891,10 +914,6 @@ int Release( struct FHandler *s, void *f )
 				FFree( lf->f_SpecialData );
 			}
 		}
-		
-		if( lf->f_Name ){ FFree( lf->f_Name ); }
-		if( lf->f_Path ){ FFree( lf->f_Path ); }
-
 		return 0;
 	}
 	return -1;
@@ -978,10 +997,6 @@ int UnMount( struct FHandler *s, void *f )
 				FFree( lf->f_SpecialData );
 			}
 		}
-		
-		if( lf->f_Name ){ FFree( lf->f_Name ); }
-		if( lf->f_Path ){ FFree( lf->f_Path ); }
-
 		return 0;
 	}
 	return -1;

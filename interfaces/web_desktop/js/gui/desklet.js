@@ -157,13 +157,16 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 			var px = e.changedTouches[0].clientX;
 			var py = e.changedTouches[0].clientY;
 			
+			var disty = py - this.touchY;
+			
 			var dist = Math.sqrt( Math.pow( this.touchX - px, 2 ) + Math.pow( this.touchY - py, 2 ) );
-			if( dist > 40 || !this.classList.contains( 'Open' ) )
+			if( disty > 100 || !this.classList.contains( 'Open' ) )
 			{
 				this.clickFunc( e );
 			}
 		}, false );
 	}
+	
 	this.dom.onmouseup = function ( e )
 	{
 		if ( !e ) e = window.event;
@@ -193,6 +196,7 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 	
 	this.openDesklet = function( e )
 	{
+		if( this.openLock ) return;
 		var self = this;
 		if( !this.open && !this.opening )
 		{
@@ -216,6 +220,12 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 		
 			this.mobileClicked = true;
 		
+			var menuTitle = document.createElement( 'div' );
+			menuTitle.className = 'AppsShowingTitle';
+			this.menuTitle = menuTitle;
+			menuTitle.innerHTML = i18n( 'i18n_your_apps' );
+			Workspace.screen.contentDiv.parentNode.appendChild( menuTitle );
+		
 			// determine y pos
 			this.dom.className = 'Desklet Open';
 			var d = this.dom;
@@ -224,8 +234,10 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 				d.classList.add( 'Opened' );
 				self.opening = false;
 				self.open = true;
+				menuTitle.classList.add( 'Opened' );
 			}, 5 );
 			document.body.classList.add( 'AppsShowing' );
+			
 			if( Workspace.widget ) Workspace.widget.slideUp();
 			return cancelBubble( e );
 		}
@@ -245,6 +257,11 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 				self.open = false;
 			}, 250 );
 			document.body.classList.remove( 'AppsShowing' );
+			if( this.menuTitle )
+			{
+				Workspace.screen.contentDiv.parentNode.removeChild( this.menuTitle );
+				this.menuTitle = null;
+			}
 			Workspace.redrawIcons();
 			return cancelBubble( e );
 		}
@@ -322,20 +339,20 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 		
 		if( position != 'fixed' )
 		{
+			Workspace.mainDock.dom.style.transition = 'none';
 			switch( pos )
 			{
 				case 'left_center':
 				case 'left_top':
 				case 'left_bottom':
 					positionClass = 'Left';
-					// Adapt icons
 					scrollerMargins.left = Workspace.mainDock.dom.offsetWidth;
+					scrollerMargins.right = Workspace.mainDock.dom.offsetWidth; // For shortcuts
 					this.direction = 'vertical';
 					break;
 				case 'right_center':
 				case 'right_top':
 				case 'right_bottom':
-				default:
 					positionClass = 'Right';
 					scrollerMargins.right = Workspace.mainDock.dom.offsetWidth;
 					this.direction = 'vertical';
@@ -350,6 +367,7 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 				case 'bottom_left':
 				case 'bottom_center':
 				case 'bottom_right':
+				default:
 					positionClass = 'Bottom';
 					scrollerMargins.bottom = Workspace.mainDock.dom.offsetHeight;
 					this.direction = 'horizontal';
@@ -374,6 +392,7 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 				this.dom.classList.remove( 'Bottom' );
 				this.dom.classList.add( positionClass );
 			}
+			Workspace.mainDock.dom.style.transition = '';
 		}
 		// Fixed!
 		else
@@ -411,13 +430,15 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 			this.dom.addEventListener( 'mousemove', GuiDeskletScrollVertical );
 		}
 		
+		// Screen content
+		var cnt = ge( 'DoorsScreen' ).object._screen;
+
 		// Do the rendering of icons
 		var sh = ge( 'DoorsScreen' )[ !horizontal ? 'offsetHeight' : 'offsetWidth' ];
 		if( !horizontal )
 		{
-			var t = GetThemeInfo( 'ScreenTitle' );
-			sh -= parseInt( t.height );
-		}
+			sh -= cnt.offsetTop;
+		}		
 		
 		// With dockwindowlist we allocate a bit more room for tasks
 		var availSpace = sh - ( ge( 'DockWindowList' ) ? 200 : 80 );
@@ -531,7 +552,7 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 		// Position of container
 		if( position != 'fixed' )
 		{
-			var th = 32; // TODO: Set dynamic title bar height
+			var th = cnt.offsetTop;
 			var midScreenH = ( ( this.dom.parentNode.offsetHeight - th ) * 0.5 ) + th;
 			
 			this.dom.style.left = 'auto';
@@ -547,7 +568,7 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 					break;
 				case 'left_top':
 					this.dom.style.left = '0px';
-					this.dom.style.top = '32px'; // TODO: Dynamic!
+					this.dom.style.top = cnt.offsetTop + 'px';
 					break;
 				case 'left_bottom':
 					this.dom.style.left = '0px';
@@ -560,22 +581,22 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 					break;
 				case 'right_top':
 					this.dom.style.right = '0px';
-					this.dom.style.top = '32px'; // TODO: Dynamic!
+					this.dom.style.top = cnt.offsetTop + 'px';
 					break;
 				case 'right_bottom':
 					this.dom.style.right = '0px';
 					this.dom.style.bottom = '0px';
 					break;
 				case 'top_center':
-					this.dom.style.top = '32px'; // TODO: Dynamic!
+					this.dom.style.top = cnt.offsetTop + 'px';
 					this.dom.style.left = Math.floor( ( this.dom.parentNode.offsetWidth * 0.5 ) - ( this.pixelWidth * 0.5 ) ) + 'px';
 					break;
 				case 'top_left':
-					this.dom.style.top = '32px'; // TODO: Dynamic!
+					this.dom.style.top = cnt.offsetTop + 'px';
 					this.dom.style.left = '0px';
 					break;
 				case 'top_right':
-					this.dom.style.top = '32px'; // TODO: Dynamic!
+					this.dom.style.top = cnt.offsetTop + 'px';
 					this.dom.style.right = '0px';
 					break;
 				case 'bottom_center':
@@ -601,9 +622,14 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 					scroller.style.paddingLeft = scrollerMargins.left + 'px';
 					scroller.style.paddingRight = scrollerMargins.right + 'px';
 					scroller.style.paddingBottom = scrollerMargins.bottom + 'px';
+					scroller.paddingTop = scrollerMargins.top;
+					scroller.paddingLeft = scrollerMargins.left;
+					scroller.paddingRight = scrollerMargins.right;
+					scroller.paddingBottom = scrollerMargins.bottom;
 				}
 			}
 		}
+		
 		PollTaskbar();
 	}
 	// End render --------------------------------------------------------------
@@ -698,11 +724,13 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 				var ws = ap.windows[w].workspace;
 				if( st || ws != globalConfig.workspaceCurrent )
 				{
+					_ActivateWindow( ap.windows[w]._window );
 					_WindowToFront( ap.windows[w]._window );
-					_ActivateWindowOnly( ap.windows[w]._window.parentNode );
 					ele.classList.remove( 'Minimized' );
 					Workspace.switchWorkspace( ws );
 					ap.windows[w].setFlag( 'hidden', false );
+					ap.windows[w].flags.minimized = false;
+					ap.windows[w].activate();
 				}
 				else
 				{
@@ -824,6 +852,7 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 			
 			function clickFunc( e )
 			{
+				if( e.button != 0 && e.type != 'touchend' ) return;
 				if( div.helpBubble ) div.helpBubble.close();
 				
 				// We got views? Just manage them
@@ -832,8 +861,12 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 					if( dk.toggleViewVisibility( this ) ) return;
 				}
 
+				var rememberCurrent = false;
 				if( currentMovable )
+				{
+					rememberCurrent = currentMovable;
 					_DeactivateWindow( currentMovable );
+				}
 			
 				var args = '';
 				var executable = o.exe + '';
@@ -890,10 +923,47 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 			
 				var docked = globalConfig.viewList == 'docked' || globalConfig.viewList == 'dockedlist';
 			
-				// If not a single instance app, execute
-				if( !docked && !Friend.singleInstanceApps[ executable ] || o.exe.indexOf( ' ' ) > 0 )
+				// If not mobile OR not ( docked AND ( NOT single instyance OR with arguments ) )
+				if( 
+					isMobile || 
+					( 
+						!docked && 
+						!( 
+							Friend.singleInstanceApps[ executable ] || 
+							o.exe.indexOf( ' ' ) > 0 
+						)	
+					)
+				)
 				{
-					ExecuteApplication( executable, args );
+					if( !Friend.singleInstanceApps[ executable ] )				
+					{
+						ExecuteApplication( executable, args );
+					}
+					else if( rememberCurrent && rememberCurrent.windowObject.applicationName == executable )
+					{
+						_ActivateWindow( rememberCurrent );
+					}
+					else
+					{
+						// Find application window
+						// TODO: Find the last active
+						for( var a = 0; a < Workspace.applications.length; a++ )
+						{
+							if( Workspace.applications[a].applicationName == executable )
+							{
+								if( Workspace.applications[a].windows )
+								{
+									for( var c in Workspace.applications[a].windows )
+									{
+										Workspace.applications[a].windows[ c ].flags.minimized = false;
+										Workspace.applications[a].windows[ c ].activate();
+										break;
+									}
+									break;
+								}
+							}
+						}
+					}
 				}
 				// Just minimize apps if you find them, if not execute
 				else
@@ -918,6 +988,11 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 				}
 			}
 			
+			if( o.noContextMenu )
+			{
+				div.addEventListener( 'contextmenu', function( ee ){ return cancelBubble( ee ); }, false );
+			}
+			
 			var evt = window.isMobile || window.isTablet ? 'ontouchend' : 'onclick';
 			
 			if( window.isMobile )
@@ -937,6 +1012,8 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 			{
 				div[ evt ] = function( e )
 				{
+					if( e.button != 0 && e.type != 'touchend' ) return;
+					
 					var t = e.target ? e.target : e.srcElement;
 					if( t != div ) return;
 					if( window.isMobile && !dk.open ) return;
@@ -947,23 +1024,79 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 			else 
 			{
 				div[ evt ] = function( e )
-				{				
+				{			
+					if( e.button != 0 && e.type != 'touchend' ) return;
+					
 					if( window.isMobile && !this.touchTime )
 						return;
 					
 					var t = e.target ? e.target : e.srcElement;
-					if( t != div ) return;
+					if( t && t != div ) return;
 					if( window.isMobile && !dk.open ) return;
 					clickFunc( e );
 					if( div.helpBubble ) div.helpBubble.close();
 				}
 			}
 			
-			var bubbletext = o.displayname ? o.displayname : ( o.title ? o.title : o.src );
-			
-			if( bubbletext )
+			if( !isMobile )
 			{
-				CreateHelpBubble( div, bubbletext );
+				div.onmouseover = function( e )
+				{
+					if( this.clickDown )
+						this.clickDown = null;
+				}
+			
+				div.onmousedown = function( e )
+				{
+					if( e.button != 0 && e.type != 'touchend' ) return;
+					// TODO: Fix special case with flags implementation on addLauncher()
+					if( div.classList.contains( 'Startmenu' ) || div.getAttribute( 'data-displayname' ) == 'Files' ) return;
+					if( mousePointer.candidate ) return;
+					// Add candidate and rules
+					var self = this;
+					var px = e.clientX;
+					var py = e.clientY;
+					mousePointer.candidate = {
+						condition: function( e )
+						{
+							var dx = windowMouseX;
+							var dy = windowMouseY;
+							var dfx = dx - px;
+							var dfy = dy - py;
+							var dist = Math.sqrt( ( dfx * dfx ) + ( dfy * dfy ) );
+							if( dist > 30 )
+							{
+								mousePointer.candidate = null;
+								self.removeChild( self.getElementsByTagName( 'span' )[0] );
+								self.ondrop = function( target )
+								{
+									if( target && target.classList )
+									{
+										if( target.classList.contains( 'ScreenContent' ) )
+										{
+											var m = new Module( 'dock' );
+											m.onExecuted = function()
+											{
+												Workspace.reloadDocks();
+											}
+											m.execute( 'removefromdock', { name: o.exe } );
+											return;
+										}
+									}
+									Workspace.reloadDocks();
+								}
+								mousePointer.pickup( self );
+							}
+						}
+					};
+				}
+
+				var bubbletext = o.displayname ? o.displayname : ( o.title ? o.title : o.src );
+			
+				if( bubbletext )
+				{
+					CreateHelpBubble( div, bubbletext );
+				}
 			}
 			this.dom.appendChild( div );
 			this.refresh ();
@@ -983,7 +1116,12 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 		var keep = []; // elements to keep
 		for( var a = 0; a < eles.length; a++ )
 		{
-			if( eles[a].className == 'ViewList' )
+			// Close help bubbles
+			if( eles[ a ].helpBubble )
+			{
+				eles[ a ].helpBubble.close();
+			}
+			if( eles[ a ].className == 'ViewList' )
 			{
 				keep.push( eles[a] );
 			}
@@ -991,7 +1129,7 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 		this.dom.innerHTML = '';
 		for( var a = 0; a < keep.length; a++ )
 		{
-			this.dom.appendChild( keep[a] );
+			this.dom.appendChild( keep[ a ] );
 		}
 	}
 	// Standard refresh function
@@ -999,7 +1137,7 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 	{
 		this.render( true );
 	}
-	this.dom.drop = function( eles )
+	this.dom.drop = function( eles, e )
 	{
 		var dropped = 0;
 		
@@ -1035,18 +1173,33 @@ GuiDesklet = function ( pobj, width, height, pos, px, py )
 			}
 			
 			// Add to launcher
-			if( self.addLauncher( element ) )
+			var extension = element.exe ? element.exe.split( '.' ) : false;
+			if( extension && extension.length > 1 )
+				extension = extension[1].toLowerCase();
+			else extension = false;
+			
+			if( element.type == 'executable' || ( element.type == 'file' && extension == 'jsx' ) )
 			{
-				var m = new Module( 'dock' );
-				var w = this.view;
-				m.onExecuted = function( r, dat )
+				if( self.addLauncher( element ) )
 				{
-					// Refresh dock noe more time
-					Workspace.reloadDocks();
+					var m = new Module( 'dock' );
+					var w = this.view;
+					m.onExecuted = function( r, dat )
+					{
+						// Refresh dock noe more time
+						Workspace.reloadDocks();
+					}
+					var o = { type: element.type, application: element.application, icon: element.src, shortdescription: '' };
+					m.execute( 'additem', o );
+					dropped++;
 				}
-				var o = { type: element.type, application: element.application, icon: element.src, shortdescription: '' };
-				m.execute( 'additem', o );
-				dropped++;
+				return dropped > 0 ? true : false;
+			}
+			else
+			{
+				Notify( { title: i18n( 'i18n_object_not_supported' ), text: i18n( 'i18n_only_executables_can_drop' ) } );
+				cancelBubble( e );
+				return false;
 			}
 		}
 		return false;
@@ -1063,7 +1216,7 @@ function RefreshDesklets()
 {
 	for ( var a = 0; a < __desklets.length; a++ )
 	{
-		__desklets[a].render ( true );
+		__desklets[a].render( true );
 	}
 }
 

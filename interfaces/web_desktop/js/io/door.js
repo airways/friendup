@@ -158,10 +158,17 @@ Door.prototype.get = function( path )
 };
 
 Door.prototype.getIcons = function( fileInfo, callback, flags )
-{
+{	
 	if( !this.path && this.deviceName )
 	{
-		this.path = this.deviceName + ':';
+		if( typeof( fileInfo ) == 'string' && fileInfo != 'Mountlist:' )
+		{
+			this.path = fileInfo;
+		}
+		else
+		{
+			this.path = this.deviceName + ':';
+		}
 	}
 	
 	var finfo = false;
@@ -209,7 +216,11 @@ Door.prototype.getIcons = function( fileInfo, callback, flags )
 	this.checkDormantDoors( t.fileInfo.Path ? t.fileInfo.Path : false, function( dirs )
 	{
 		if( !t.fileInfo.Path && t.path )
-			t.fileInfo.Path = t.deviceName + ':' + t.path;
+		{
+			if( t.deviceName.indexOf( ':' ) < 0 )
+				t.deviceName += ':';
+			t.fileInfo.Path = t.path.indexOf( ':' ) > 0 ? t.path : ( t.deviceName + t.path );
+		}
 
 		var fname = t.fileInfo.Path.split( ':' )[1];
 		if( fname && fname.indexOf( '/' ) > 0 ){ fname = fname.split( '/' ); fname = fname[fname.length-1]; }
@@ -248,10 +259,12 @@ Door.prototype.getIcons = function( fileInfo, callback, flags )
 			
 			// Use standard Friend Core doors
 			var j = new cAjax();
+			if( t.cancelId )
+				j.cancelId = t.cancelId;
 			if( t.context ) j.context = t.context;
 
 			//changed from post to get to get more speed.
-			j.open( 'get', updateurl, true, true );
+			j.open( 'POST', updateurl, true, true );
 			j.parseQueue = function( result, path, purePath )
 			{
 				if( cache[ updateurl ].queue.length )
@@ -263,6 +276,7 @@ Door.prototype.getIcons = function( fileInfo, callback, flags )
 				}
 				delete cache[ updateurl ]; // Flush!
 			}
+			
 			j.onload = function( e, d )
 			{
 				if( e )
@@ -283,14 +297,22 @@ Door.prototype.getIcons = function( fileInfo, callback, flags )
 						}
 						var res = callback( false, t.fileInfo.Path, false );
 						this.parseQueue( false, t.fileInfo.Path, false );
+						
 						return res;
 					}
-
 					
 					var parsed = '';
 					// Clear last bit
 					for( var tries = 0; tries < 2; tries++ )
 					{
+						// Remove newlines
+						// TODO: Handle in server! This is a bug
+						if( d.indexOf( "\n" ) > 0 )
+						{
+							d = d.split( "\n" );
+							d = d.join( "\\n" );
+						}
+						
 						try
 						{
 							parsed = JSON.parse( d );
@@ -472,6 +494,8 @@ Door.prototype.write = function( filename, data, mode, extraData )
 	
 	var j = new cAjax();
 	if( this.context ) j.context = this.context;
+	if( this.cancelId )
+		jax.cancelId = this.cancelId;
 	
 	//var old = Workspace.websocketsOffline;
 	//Workspace.websocketsOffline = true;
@@ -532,6 +556,8 @@ Door.prototype.read = function( filename, mode, extraData )
 	}
 	var j = new cAjax();
 	if( this.context ) j.context = this.context;
+	if( this.cancelId )
+		j.cancelId = this.cancelId;
 	if( mode == 'rb' )
 		j.forceHTTP = true;
 	j.open( 'post', '/system.library/file/read', true, true );
@@ -610,7 +636,7 @@ Door.prototype.dosAction = function( ofunc, args, callback )
 
 	// Special case for 'copy' if destination is a Dormant drive
 	var dr = this;
-	if ( ofunc == 'copy' )
+	if( ofunc == 'copy' )
 	{
 		var drive = args[ 'to' ].split( ':' )[ 0 ] + ':';
 		var doors = DormantMaster.getDoors();
@@ -624,16 +650,22 @@ Door.prototype.dosAction = function( ofunc, args, callback )
 				{
 					// Loads the file in binary mode
 					var file = new File( args[ 'from' ] );
+					if( this.cancelId )
+						file.cancelId = this.cancelId;
 					file.onLoad = function( data )
 					{
 						door.Dormant.write( args[ 'to' ], data, function( response )
 						{
 							refresh();
-							if ( response == 0 )
+							if( response == 0 )
+							{
 								doAlert();
+							}
 							else
+							{
 								response = 'ok';
-							if ( callback )
+							}
+							if( callback )
 								callback( response, dr );
 						} );
 					}
@@ -662,13 +694,18 @@ Door.prototype.dosAction = function( ofunc, args, callback )
 	// We need a path
 	if( !args.path ) args.path = this.deviceName + ':' + this.path;
 
+	//console.log( '[ Door File Operation ] ' + ofunc + ' - ' + this.deviceName + ':' + this.path );
+
 	// Do the request
 	var j = new cAjax();
+	if( this.cancelId )
+		j.cancelId = this.cancelId;
 	if( this.context ) j.context = this.context;
 	j.open( 'post', '/system.library/' + func, true, true );
 	if( Workspace.conf && Workspace.conf.authId )
 		j.addVar( 'authid', Workspace.conf.authId );
 	else j.addVar( 'sessionid', Workspace.sessionId );
+	if( typeof( this.notify ) != 'undefined' ) j.addVar( 'notify', this.notify );
 	j.addVar( 'args', JSON.stringify( args ) );
 	// Since FC doesn't have full JSON support yet, let's do this too
 	if( args && ( typeof( args ) == 'object' || typeof( args ) == 'array' ) )
@@ -688,6 +725,7 @@ Door.prototype.dosAction = function( ofunc, args, callback )
 		{
 			refresh();
 			var s = this.responseText().split( '<!--separate-->' );
+			
 			if( s && s[0] != 'ok' )
 			{
 				doAlert();
@@ -745,6 +783,8 @@ Door.prototype.dosAction = function( ofunc, args, callback )
 Door.prototype.Mount = function( callback )
 {
 	var f = new FriendLibrary( 'system.library' );
+	if( this.cancelId )
+		f.cancelId = this.cancelId;
 	f.onExecuted = function( e, d )
 	{
 		Application.refreshDoors();
@@ -765,6 +805,8 @@ Door.prototype.Mount = function( callback )
 Door.prototype.Unmount = function( callback )
 {
 	var f = new Library( 'system.library' );
+	if( this.cancelId )
+		f.cancelId = this.cancelId;
 	f.onExecuted = function( e, d )
 	{
 		//
@@ -800,6 +842,16 @@ function IsPathOnDormantDoor( path )
 }
 function GetURLFromPath( path, callback, type, toAdd )
 {
+	// Http links
+	if( path.substr( 0, 5 ) == 'http:' || path.substr( 0, 6 ) == 'https:' )
+	{
+		// Evaluate external links
+		//var r = document.location.href.split( /\/[^\/]?*/ );
+		//r = r[0] + '//' + r[1];	
+		//if( path.substr( 0, r.length ) != r )
+			return callback( path );
+	}
+		
 	if ( IsPathOnDormantDoor( path ) )
 	{
 		// Type not defined, get type from file extension
@@ -862,6 +914,8 @@ function GetURLFromPath( path, callback, type, toAdd )
 
 		// Load the file in binary
 		var file = new File( path );
+		if( this.cancelId )
+			file.cancelId = this.cancelId;
 		file.onLoad = function( data )
 		{
 			// Check for error

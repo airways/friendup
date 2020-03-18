@@ -1,7 +1,7 @@
 /*
  * lws-minimal-http-server-dynamic
  *
- * Copyright (C) 2018 Andy Green <andy@warmcat.com>
+ * Written in 2010-2019 by Andy Green <andy@warmcat.com>
  *
  * This file is made available under the Creative Commons CC0 1.0
  * Universal Public Domain Dedication.
@@ -51,6 +51,9 @@ callback_dynamic_http(struct lws *wsi, enum lws_callback_reasons reason,
 
 		/* in contains the url part after our mountpoint /dyn, if any */
 		lws_snprintf(pss->path, sizeof(pss->path), "%s", (const char *)in);
+
+		lws_get_peer_simple(wsi, (char *)buf, sizeof(buf));
+		lwsl_notice("%s: HTTP: connection %s\n", __func__, (const char *)buf);
 
 		/*
 		 * prepare and write http headers... with regards to content-
@@ -127,10 +130,13 @@ callback_dynamic_http(struct lws *wsi, enum lws_callback_reasons reason,
 			 * valid behind the buffer we will send.
 			 */
 			p += lws_snprintf((char *)p, end - p, "<html>"
-				"<img src=\"/libwebsockets.org-logo.png\">"
+				"<head><meta charset=utf-8 "
+				"http-equiv=\"Content-Language\" "
+				"content=\"en\"/></head><body>"
+				"<img src=\"/libwebsockets.org-logo.svg\">"
 				"<br>Dynamic content for '%s' from mountpoint."
 				"<br>Time: %s<br><br>"
-				"</html>", pss->path, ctime(&t));
+				"</body></html>", pss->path, ctime(&t));
 		} else {
 			/*
 			 * after the first time, we create bulk content.
@@ -172,10 +178,10 @@ callback_dynamic_http(struct lws *wsi, enum lws_callback_reasons reason,
 	return lws_callback_http_dummy(wsi, reason, user, in, len);
 }
 
-static struct lws_protocols protocols[] = {
-	{ "http", callback_dynamic_http, sizeof(struct pss), 0 },
-	{ NULL, NULL, 0, 0 } /* terminator */
-};
+static const struct lws_protocols protocol =
+	{ "http", callback_dynamic_http, sizeof(struct pss), 0 };
+
+static const struct lws_protocols *pprotocols[] = { &protocol, NULL };
 
 /* override the default mount for /dyn in the URL space */
 
@@ -249,7 +255,8 @@ int main(int argc, const char **argv)
 
 	memset(&info, 0, sizeof info); /* otherwise uninitialized garbage */
 	info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
-		       LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
+		       LWS_SERVER_OPTION_EXPLICIT_VHOSTS |
+		LWS_SERVER_OPTION_HTTP_HEADERS_SECURITY_BEST_PRACTICES_ENFORCE;
 
 	/* for testing ah queue, not useful in real world */
 	if (lws_cmdline_option(argc, argv, "--ah1"))
@@ -264,7 +271,7 @@ int main(int argc, const char **argv)
 	/* http on 7681 */
 
 	info.port = 7681;
-	info.protocols = protocols;
+	info.pprotocols = pprotocols;
 	info.mounts = &mount;
 	info.vhost_name = "http";
 
@@ -287,7 +294,7 @@ int main(int argc, const char **argv)
 	}
 
 	while (n >= 0 && !interrupted)
-		n = lws_service(context, 1000);
+		n = lws_service(context, 0);
 
 bail:
 	lws_context_destroy(context);

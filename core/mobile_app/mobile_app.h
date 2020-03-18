@@ -40,6 +40,7 @@
 #include <stdbool.h>
 #include <util/friendqueue.h>
 #include <network/websocket_client.h>
+#include <system/notification/notification.h>
 
 typedef enum {
 	//0 - undefined
@@ -54,31 +55,38 @@ typedef enum {
 }MobileNotificationTypeT;
 
 enum {
-	MOBILE_APP_TYPE_ANDROID = 0,
+	MOBILE_APP_TYPE_NONE = 0,
+	MOBILE_APP_TYPE_ANDROID,
 	MOBILE_APP_TYPE_IOS,
-	MOBILE_APP_TYPE_WINDOWS
+	MOBILE_APP_TYPE_WINDOWS,
+	MOBILE_APP_TYPE_MAX
 };
+
+static char *MobileAppType[] =
+{
+	"None",
+	"Android",
+	"iOS",
+	"Windows"
+};
+
+#define WEBSOCKET_SINK_SEND_QUEUE
 
 typedef struct MobileAppNotif
 {
-	FQueue					man_Queue;
-	int						man_Initialized;
 	int						man_Type;
-	WebsocketClient			*man_Connection;
-	pthread_mutex_t			man_Mutex;
+	void					*man_Data;
+	int						man_InUse;
 }MobileAppNotif;
 
-/**
- * Sends notification to a user
- *
- * @param username friend username string
- * @param channel_id this is used to replace previous notifications, if two notifications
- *                   with the same channel_id are sent, then the second one replaces the first
- * @param title title of the notification
- * @param message message string to be displayed
- * @param notification_type option flag, see MobileNotificationTypeT
- * @param extra_string additional information for workspace
- *                     (eg. launch an app, start a chat etc.), WORKSPACE-SPECIFIC, can be null
- * @return 0 when success, otherwise error number
- */
-int MobileAppNotifyUser( const char *username, const char *channel_id, const char *title, const char *message, MobileNotificationTypeT notification_type, const char *extra_string);
+//
+//
+//
+
+int MobileAppNotifyUserRegister( void *lsb, const char *username, const char *channel_id, const char *app, const char *title, const char *message, MobileNotificationTypeT notification_type, const char *extraString, FULONG ctimestamp );
+
+//
+//
+//
+
+int MobileAppNotifyUserUpdate( void *lsb,  const char *username, Notification *notif, int action );

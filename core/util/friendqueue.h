@@ -21,12 +21,19 @@
 #define __UTIL_FRIENDQUEUE_H__
 
 #include <core/nodes.h>
+#include <util/time.h>
 
 typedef struct FQEntry
 {
 	MinNode			node;
-	unsigned char	*fq_Data;	// 
-	int				fq_Size;	// this should be removed
+	unsigned char	*fq_Data;		// 
+	char			*fq_RequestID;	// request ID
+	int				fq_Size;		// size of message
+	int				fq_Priority;	// message priority
+	time_t			fq_Timestamp;	// message timestamp
+#ifdef __PERF_MEAS
+	double			fq_stime;		// time used to check how much time take to sent it
+#endif
 }FQEntry;
 
 typedef struct FQueue
@@ -55,7 +62,7 @@ typedef struct FQueue
  *
  * @param qroot pointer to main FQueue structure
  */
-#define FQDeInitFree( qroot ) { FQEntry *q = (qroot)->fq_First; while( q != NULL ){ void *r = q; FFree( q->fq_Data ); q = (FQEntry *)q->node.mln_Succ; FFree( r ); } }
+#define FQDeInitFree( qroot ) { FQEntry *q = (qroot)->fq_First; while( q != NULL ){ void *r = q; FFree( q->fq_Data ); q = (FQEntry *)q->node.mln_Succ; FFree( r ); } (qroot)->fq_First = NULL; (qroot)->fq_Last = NULL; }
 
 /**
  * Push data into FQueue structure in FILO mode
@@ -71,7 +78,18 @@ typedef struct FQueue
  * @param qroot pointer to main FQueue structure
  * @param q poitner to data which will be placed in FriendQueue
  */
-#define FQPushFIFO( qroot, q ) if( (qroot)->fq_First == NULL ){ (qroot)->fq_First = q; (qroot)->fq_Last = q; }else{ (qroot)->fq_Last->node.mln_Succ = (MinNode *)q; (qroot)->fq_Last = q; } printf("Added: %d\n", q->fq_Size );
+
+#ifdef __PERF_MEAS
+#define FQPushFIFO( qroot, q ) if( (qroot)->fq_First == NULL ){ (qroot)->fq_First = q; (qroot)->fq_Last = q; }else{ (qroot)->fq_Last->node.mln_Succ = (MinNode *)q; (qroot)->fq_Last = q; q->fq_stime = GetCurrentTimestampD(); } 
+#else
+#define FQPushFIFO( qroot, q ) if( (qroot)->fq_First == NULL ){ (qroot)->fq_First = q; (qroot)->fq_Last = q; }else{ (qroot)->fq_Last->node.mln_Succ = (MinNode *)q; (qroot)->fq_Last = q; } 
+#endif
+
+#define FQPushWithPriority( qroot, q ){ \
+if( (qroot)->fq_First == NULL ){ (qroot)->fq_First = q; (qroot)->fq_Last = q; } \
+else if( ((FQEntry *)(qroot)->fq_First)->fq_Priority > q->fq_Priority ){ q->node.mln_Succ = (MinNode *)(qroot)->fq_First; (qroot)->fq_First = q; } \
+else{ FQEntry *fe = (qroot)->fq_First; while( fe != NULL ){ FQEntry *nfe = (FQEntry *)fe->node.mln_Succ; if( nfe == NULL ){ fe->node.mln_Succ = (MinNode *)q; (qroot)->fq_Last = q; break; } if( nfe->fq_Priority >= q->fq_Priority ){ fe->node.mln_Succ = (MinNode *)q; break; } fe = (FQEntry *)fe->node.mln_Succ; } } \
+}
 
 FQEntry *FQPop( FQueue *qroot );
 

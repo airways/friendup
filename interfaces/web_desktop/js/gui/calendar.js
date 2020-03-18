@@ -116,7 +116,7 @@ Calendar.prototype.render = function( skipOnRender )
 					// List out todays events
 					if( dliteral == currentDay && dobjMonth == nowMonth && dobjFullYear == nowYear )
 					{
-						console.log( 'One goes out' );
+						//console.log( 'One goes out' );
 						// var out = JSON.parse( d ); huh?
 						for( var aa = 0; aa < this.events[key].length; aa++ )
 						{
@@ -253,7 +253,7 @@ Calendar.prototype.drawMonthname = function()
 	}
 	
 	var spans = this.monthName.getElementsByTagName( 'span' );
-	spans[0].onclick = function()
+	spans[0].onclick = function( e )
 	{
 		var d = new Date();
 		
@@ -267,9 +267,11 @@ Calendar.prototype.drawMonthname = function()
 		self.setDate( d );
 		self.render();
 		self.drawMonthname();
+		
+		return cancelBubble( e );
 	}
 	// Now
-	spans[1].onclick = function()
+	spans[1].onclick = function( e )
 	{
 		var d = new Date();
 		self.setDate( d );
@@ -296,7 +298,7 @@ Calendar.prototype.drawMonthname = function()
 CalendarEvent = function( data )
 {
 	var self = this;
-	console.log( 'CalendarEvent', data );
+	//console.log( 'CalendarEvent', data );
 	data.Type = 'CalendarEvent';
 	self.data = data;
 	return self.init();
@@ -324,9 +326,19 @@ CalendarEvent.prototype.init = function()
 	if( self.data.ID.indexOf( '_' ) < 0 )
 	{
 		var remove = document.createElement( 'div' );
-		remove.className = "IconSmall FloatRight MousePointer fa-remove";
-		remove.onclick = function() { Workspace.removeCalendarEvent( self.data.ID ); }
+		remove.className = 'IconSmall FloatRight MousePointer fa-remove';
+		remove.onclick = function(){ 
+			console.log( 'Whot?' );
+			Workspace.removeCalendarEvent( self.data.ID ); 
+		}
 		self.element.appendChild( remove );
+		
+		var edit = document.createElement( 'div' );
+		edit.className = 'IconSmall FloatRight MousePointer fa-edit MarginRight';
+		edit.onclick = function(){
+			Workspace.editCalendarEvent( self.data.ID );
+		}
+		self.element.appendChild( edit );
 	}
 	else
 	{

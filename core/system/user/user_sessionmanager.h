@@ -20,7 +20,7 @@
 
 #include <core/types.h>
 #include "user_session.h"
-#include "user_group.h"
+#include <system/usergroup/user_group.h>
 #include "user.h"
 
 //
@@ -168,7 +168,7 @@ int USMRemoveOldSessionsinDB( void *lsb );
 //
 //
 
-FBOOL USMSendDoorNotification( UserSessionManager *usm, void *notification, File *device, char *path );
+FBOOL USMSendDoorNotification( UserSessionManager *usm, void *notification, UserSession *ses, File *device, char *path );
 
 //
 // get user by auth id
@@ -193,5 +193,11 @@ User *UserGetByID( UserSessionManager *usm, FULONG id );
 //
 
 void USMCloseUnusedWebSockets( UserSessionManager *usm );
+
+//
+//
+//
+
+int USMGetSessionsDeleteDB( UserSessionManager *smgr, const char *sessionid );
 
 #endif //__SYSTEM_USER_USER_SESSIONMANAGER_H__

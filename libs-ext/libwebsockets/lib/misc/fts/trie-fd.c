@@ -1,26 +1,29 @@
 /*
- * libjsongit2 - trie file functions
+ * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
-#include "core/private.h"
-#include "misc/fts/private.h"
+#include "private-lib-core.h"
+#include "private-lib-misc-fts.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -219,53 +222,6 @@ lws_fts_close(struct lws_fts_file *jtf)
 	lws_free(jtf);
 }
 
-int
-lws_fts_results_dump(struct lws_fts_result *result)
-{
-#if !defined(LWS_WITH_NO_LOGS)
-	struct lws_fts_result_autocomplete *ac;
-	struct lws_fts_result_filepath *fp;
-	uint32_t *l, n;
-
-	if (!result) {
-		lwsl_notice("%s: no result, search failed\n", __func__);
-
-		return 0;
-	}
-
-	ac = result->autocomplete_head;
-	fp = result->filepath_head;
-
-	if (!ac)
-		lwsl_notice("%s: no autocomplete results\n", __func__);
-
-	while (ac) {
-		lwsl_notice("%s: AC %s: %d agg hits\n", __func__,
-			((char *)(ac + 1)), ac->instances);
-
-		ac = ac->next;
-	}
-
-	if (!fp)
-		lwsl_notice("%s: no filepath results\n", __func__);
-
-	while (fp) {
-		lwsl_notice("%s: %s: (%d lines) %d hits \n", __func__,
-			(((char *)(fp + 1)) + sizeof(uint32_t) * fp->matches),
-			fp->lines_in_file, fp->matches);
-
-		l = (uint32_t *)(fp + 1);
-		n = 0;
-		while ((int)n++ < fp->matches)
-			lwsl_notice(" %d\n", *l++);
-
-		fp = fp->next;
-	}
-#endif
-
-	return 0;
-}
-
 #define grab(_pos, _size) { \
 		bp = 0; \
 		if (lseek(jtf->fd, _pos, SEEK_SET) < 0) { \
@@ -437,7 +393,7 @@ lws_fts_search(struct lws_fts_file *jtf, struct lws_fts_search_params *ftsp)
 	uint32_t children, instances, co, sl, agg, slt, chunk,
 		 fileofs_tif_start, desc, agg_instances;
 	int pos = 0, n, m, nl, bp, base = 0, ra, palm, budget, sp, ofd = -1;
-	unsigned long long tf = lws_time_in_microseconds();
+	unsigned long long tf = lws_now_usecs();
 	struct lws_fts_result_autocomplete **pac = NULL;
 	char stasis, nac = 0, credible, needle[32];
 	struct lws_fts_result_filepath *fp;
@@ -642,7 +598,7 @@ ensure:
 		}
 	} while(1);
 
-	result->duration_ms = (int)((lws_time_in_microseconds() - tf) / 1000);
+	result->duration_ms = (int)((lws_now_usecs() - tf) / 1000);
 
 	if (!instances && !children)
 		return result;
@@ -664,8 +620,8 @@ ensure:
 		struct lwsac *lt_head = NULL;
 		struct linetable *ltst;
 		char path[256], *pp;
-		off_t fo;
 		int footprint;
+		off_t fo;
 
 		ofd = -1;
 		grab(o, sizeof(buf));
@@ -758,10 +714,10 @@ ensure:
 				if (lseek(ofd, fo, SEEK_SET) < 0)
 					continue;
 
-				lbuf[sizeof(lbuf) - 1] = '\0';
 				m = read(ofd, lbuf, sizeof(lbuf) - 1);
 				if (m < 0)
 					continue;
+				lbuf[sizeof(lbuf) - 1] = '\0';
 
 				p = (unsigned char *)strchr((char *)lbuf, '\n');
 				if (p)
@@ -870,14 +826,11 @@ autocomp:
 	if (pos > (int)sizeof(s[sp].ch[0].name) - 1)
 		pos = (int)sizeof(s[sp].ch[0].name) - 1;
 
-	s[sp].child_count = 0;
+	memset(&s[sp], 0, sizeof(s[sp]));
+
 	s[sp].child = 1;
-	s[sp].once = 0;
 	s[sp].tifs = fileofs_tif_start;
 	s[sp].self = child_ofs;
-	s[sp].ch[0].name_length = 0;
-	s[sp].done_children = 0;
-	s[sp + 1].done_children = 0;
 	s[sp].ch[0].effpos = pos;
 
 	if (pos == nl)
@@ -911,11 +864,8 @@ autocomp:
 		if (!s[sp].done_children && children) {
 			s[sp].done_children = 1;
 			sp++;
-			s[sp].child = 0;
+			memset(&s[sp], 0, sizeof(s[sp]));
 			s[sp].tifs = fileofs_tif_start;
-			s[sp].once = 0;
-			s[sp].child_count = 0;
-			s[sp].done_children = 0;
 			s[sp].self = child_ofs;
 
 			for (n = 0; n < (int)children && s[sp].child_count <

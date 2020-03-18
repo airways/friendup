@@ -1,24 +1,25 @@
 /*
  * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2010-2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
- *
- * included from libwebsockets.h
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 /*! \defgroup sending-data Sending data
@@ -52,11 +53,14 @@
 enum lws_write_protocol {
 	LWS_WRITE_TEXT						= 0,
 	/**< Send a ws TEXT message,the pointer must have LWS_PRE valid
-	 * memory behind it.  The receiver expects only valid utf-8 in the
-	 * payload */
+	 * memory behind it.
+	 *
+	 * The receiver expects only valid utf-8 in the payload */
 	LWS_WRITE_BINARY					= 1,
 	/**< Send a ws BINARY message, the pointer must have LWS_PRE valid
-	 * memory behind it.  Any sequence of bytes is valid */
+	 * memory behind it.
+	 *
+	 * Any sequence of bytes is valid */
 	LWS_WRITE_CONTINUATION					= 2,
 	/**< Continue a previous ws message, the pointer must have LWS_PRE valid
 	 * memory behind it */
@@ -120,6 +124,7 @@ struct lws_write_passthru {
 
 /**
  * lws_write() - Apply protocol then write data to client
+ *
  * \param wsi:	Websocket instance (available from user callback)
  * \param buf:	The data to send.  For data being sent on a websocket
  *		connection (ie, not default http), this buffer MUST have
@@ -143,10 +148,20 @@ struct lws_write_passthru {
  * LWS_WRITE_BINARY,
  * LWS_WRITE_CONTINUATION,
  * LWS_WRITE_PING,
- * LWS_WRITE_PONG
+ * LWS_WRITE_PONG,
  *
- * the send buffer has to have LWS_PRE bytes valid BEFORE
- * the buffer pointer you pass to lws_write().
+ * or sending on http/2,
+ *
+ * the send buffer has to have LWS_PRE bytes valid BEFORE the buffer pointer you
+ * pass to lws_write().  Since you'll probably want to use http/2 before too
+ * long, it's wise to just always do this with lws_write buffers... LWS_PRE is
+ * typically 16 bytes it's not going to hurt usually.
+ *
+ * start of alloc       ptr passed to lws_write      end of allocation
+ *       |                         |                         |
+ *       v  <-- LWS_PRE bytes -->  v                         v
+ *       [----------------  allocated memory  ---------------]
+ *              (for lws use)      [====== user buffer ======]
  *
  * This allows us to add protocol info before and after the data, and send as
  * one packet on the network without payload copying, for maximum efficiency.
@@ -160,15 +175,6 @@ struct lws_write_passthru {
  *   memset(&buf[LWS_PRE], 0, 128);
  *
  *   lws_write(wsi, &buf[LWS_PRE], 128, LWS_WRITE_TEXT);
- *
- * When sending HTTP, with
- *
- * LWS_WRITE_HTTP,
- * LWS_WRITE_HTTP_HEADERS
- * LWS_WRITE_HTTP_FINAL
- *
- * there is no protocol data prepended, and don't need to take care about the
- * LWS_PRE bytes valid before the buffer pointer.
  *
  * LWS_PRE is at least the frame nonce + 2 header + 8 length
  * LWS_SEND_BUFFER_POST_PADDING is deprecated, it's now 0 and can be left off.
@@ -212,7 +218,17 @@ lws_write(struct lws *wsi, unsigned char *buf, size_t len,
 #define lws_write_http(wsi, buf, len) \
 	lws_write(wsi, (unsigned char *)(buf), len, LWS_WRITE_HTTP)
 
-/* helper for multi-frame ws message flags */
+/**
+ * lws_write_ws_flags() - Helper for multi-frame ws message flags
+ *
+ * \param initial: the lws_write flag to use for the start fragment, eg,
+ *		   LWS_WRITE_TEXT
+ * \param is_start: nonzero if this is the first fragment of the message
+ * \param is_end: nonzero if this is the last fragment of the message
+ *
+ * Returns the correct LWS_WRITE_ flag to use for each fragment of a message
+ * in turn.
+ */
 static LWS_INLINE int
 lws_write_ws_flags(int initial, int is_start, int is_end)
 {
@@ -228,4 +244,21 @@ lws_write_ws_flags(int initial, int is_start, int is_end)
 
 	return r;
 }
+
+/**
+ * lws_raw_transaction_completed() - Helper for flushing before close
+ *
+ * \param wsi: the struct lws to operate on
+ *
+ * Returns -1 if the wsi can close now.  However if there is buffered, unsent
+ * data, the wsi is marked as to be closed when the output buffer data is
+ * drained, and it returns 0.
+ *
+ * For raw cases where the transaction completed without failure,
+ * `return lws_raw_transaction_completed(wsi)` should better be used than
+ * return -1.
+ */
+LWS_VISIBLE LWS_EXTERN int LWS_WARN_UNUSED_RESULT
+lws_raw_transaction_completed(struct lws *wsi);
+
 ///@}

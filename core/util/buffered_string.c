@@ -87,7 +87,7 @@ unsigned int BufStringAdd(BufString *bs, const char *string_to_append)
 
 unsigned int BufStringAddSize(BufString *bs, const char *string_to_append, unsigned int string_to_append_length)
 {
-	if ( string_to_append == NULL || string_to_append_length < 1 )
+	if( bs == NULL || string_to_append == NULL || string_to_append_length < 1 )
 	{
 		FERROR("Cannot add NULL text!\n");
 		return 1;
@@ -133,3 +133,54 @@ unsigned int BufStringAddSize(BufString *bs, const char *string_to_append, unsig
 	return 0;
 }
 
+/**
+ * Read file to buffered string
+ * @param path path to file
+ * @return BufString object in file inside or NULL when error appear
+ */
+BufString *BufStringRead(const char *path )
+{
+	BufString *bs = NULL;
+	FILE *fp = NULL;
+	
+	if( ( fp = fopen( path, "rb" ) ) != NULL )
+	{
+		fseek( fp, 0, SEEK_END );
+		int fsize = ftell( fp );
+		fseek( fp, 0, SEEK_SET );
+
+		if( fsize > 0 )
+		{
+			bs = BufStringNewSize( fsize+1 );
+			fread( bs->bs_Buffer, 1, fsize, fp );
+			bs->bs_Buffer[ fsize ] = 0;
+		}
+		fclose( fp );
+	}
+	
+	return bs;
+}
+
+/**
+ * Write buffered string into file
+ * @param bs pointer to BufString object
+ * @param path path to file
+ * @return 0 when success otherwise error number
+ */
+int BufStringWrite( BufString *bs, const char *path )
+{
+	if( bs != NULL )
+	{
+		FILE *fp = NULL;
+		if( ( fp = fopen( path, "wb" ) ) != NULL )
+		{
+			fwrite( bs->bs_Buffer, 1 , bs->bs_Size, fp );
+			fclose( fp );
+		}
+	}
+	else
+	{
+		DEBUG("Buffer is empty");
+	}
+	return 0;
+}

@@ -25,6 +25,39 @@
 #include <system/cache/cache_manager.h>
 #include <system/fsys/fsys_activity.h>
 
+#define CHECK_BAD_CHARS( PTH, INT, RETVAL ) \
+if( PTH[ INT ] == '/' || PTH[ INT ] == ':' || PTH[ INT ] == '\'' ) \
+{ \
+	RETVAL = TRUE; \
+	break; \
+}
+
+//
+// Internal function to cut path from path+filename
+//
+
+static inline char *CutNotificationPath( char *path )
+{
+	char *notifPath = StringDuplicate( path );
+	if( notifPath != NULL )
+	{
+		int i, notifPathLen = strlen( notifPath );
+		if( notifPath[ notifPathLen-1 ] == '/' )
+		{
+			notifPathLen-=2;
+		}
+		for( i=notifPathLen ; i >= 0 ; i-- )
+		{
+			if( notifPath[ i ] == '/' || notifPath[ i ] == ':' )
+			{
+				notifPath[ i+1 ] = 0;
+				break;
+			}
+		}
+	}
+	return notifPath;
+}
+
 /**
  * Filesystem web calls handler
  *
@@ -130,6 +163,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 		char *tmpPath = UrlDecodeToMem( path );
 		if( tmpPath != NULL )
 		{
+			Log( FLOG_INFO, "File operation, path: %s\n", tmpPath );
 			if( ColonPosition( tmpPath ) <= 0 )
 			{
 				path = NULL;
@@ -160,6 +194,8 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 		UrlDecode( ntp, targetPath );
 		targetPath = ntp;
 		freeTargetPath = TRUE; // this one needs to be freed
+		
+		Log( FLOG_INFO, "File operation, target path: %s\n", targetPath );
 	}
 	
 	DEBUG( "[FSMWebRequest] Checking path: %s\n", path );
@@ -186,7 +222,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 	}
 	else
 	{
-		if( loggedSession->us_User == NULL )
+		if( loggedSession == NULL || loggedSession->us_User == NULL )
 		{
 			response = HttpNewSimpleA( HTTP_200_OK, request,  HTTP_HEADER_CONTENT_TYPE, (FULONG)  StringDuplicateN( DEFAULT_CONTENT_TYPE, 24 ),
 									   HTTP_HEADER_CONNECTION, (FULONG)StringDuplicateN( "close", 5 ),TAG_DONE, TAG_DONE );
@@ -201,7 +237,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 		
 		DEBUG("[FSMWebRequest] Checking mounted devices\n");
 		
-		File *lDev = loggedSession->us_User->u_MountedDevs;
+		//File *lDev = loggedSession->us_User->u_MountedDevs;
 		
 		File *actDev = NULL;
 		char devname[ 256 ];
@@ -236,8 +272,8 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 		// Should never happen
 		else
 		{
-			if( locpath ) FFree( locpath ); locpath = NULL;
-			if( originalPath ) FFree( originalPath ); originalPath = NULL;
+			if( locpath ){ FFree( locpath ); locpath = NULL; }
+			if( originalPath ){ FFree( originalPath ); originalPath = NULL; }
 		}
 		//
 		
@@ -425,10 +461,12 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 																img = gdImageCreateFromGif( dstFp );
 																if( img == NULL )
 																{
+#ifdef USE_WEBP_LOADER
 																	fseek( dstFp, 0, SEEK_SET );
 																	img = gdImageCreateFromWebp( dstFp );
 																	if( img == NULL )
 																	{
+#endif
 																		fseek( dstFp, 0, SEEK_SET );
 																		img = gdImageCreateFromTga( dstFp );
 																		if( img == NULL )
@@ -441,7 +479,9 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 																				img = gdImageCreateFromWBMP( dstFp );
 																			}
 																		}
+#ifdef USE_WEBP_LOADER
 																	}
+#endif
 																}
 															}
 														}
@@ -509,6 +549,10 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 									
 									BufStringDelete( resp );
 									resp = dstBs;
+								}
+								else
+								{
+									BufStringDelete( dstBs );
 								}
 							}
 
@@ -679,6 +723,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 				* @param sessionid - (required) session id of logged user
 				* @param path - (required) path to file which name you want to change
 				* @param newname - (required) new file name
+				* @param notify - send notification to other sessions/user about changes (by default set to true, set false to disable this)
 				* @return { response:0 } when success, otherwise error number
 				*/
 				/// @endcond
@@ -687,43 +732,112 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					response = HttpNewSimpleA( HTTP_200_OK, request,  HTTP_HEADER_CONTENT_TYPE, (FULONG)  StringDuplicateN( DEFAULT_CONTENT_TYPE, 24 ),
 											   HTTP_HEADER_CONNECTION, (FULONG)StringDuplicateN( "close", 5 ),TAG_DONE, TAG_DONE );
 					
+					char tmp[ 256 ];
 					char *nname = NULL;
 					el = HttpGetPOSTParameter( request, "newname" );
 					if( el == NULL ) el = HashmapGet( request->query, "newname" );
 					if( el != NULL )
 					{
-						nname = (char *)el->data;
+						nname = UrlDecodeToMem( (char *)el->data );
+					}
+					
+					FBOOL notify = TRUE;
+					el = HttpGetPOSTParameter( request, "notify" );
+					if( el == NULL ) el = HashmapGet( request->query, "notify" );
+					if( el != NULL )
+					{
+						if( el->data != NULL )
+						{
+							if( strcmp( (char *)el->data, "false" ) == 0 )
+							{
+								notify = FALSE;
+							}
+						}
 					}
 					
 					if( nname != NULL )
 					{
-						char tmpname[ 512 ];
-						UrlDecode( tmpname, nname );
-						
 						FHandler *actFS = (FHandler *)actDev->f_FSys;
-						DEBUG("[FSMWebRequest] Filesystem RENAME\n");
+						// check if its allowed to use char
+						unsigned int i;
+						FBOOL badCharFound = FALSE;
 						
-						char tmp[ 256 ];
-						
-						FBOOL have = FSManagerCheckAccess( l->sl_FSM, path, actDev->f_ID, loggedSession->us_User, "--W---" );
-						if( have == TRUE )
+						for( i = 0 ; i < strlen( nname ) ; i++ )
 						{
-							actDev->f_SessionIDPTR = loggedSession->us_User->u_MainSessionID;
-							int error = actFS->Rename( actDev, path, tmpname );
-							sprintf( tmp, "ok<!--separate-->{ \"response\": \"%d\"}", error );
+							CHECK_BAD_CHARS( nname, i, badCharFound );
+							/*
+							if( nname[ i ] == '/' || nname[ i ] == ':' || nname[ i ] == '\'' )
+							{
+								badCharFound = TRUE;
+								break;
+							}
+							*/
+						}
 						
-							DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
+						if( badCharFound == FALSE )
+						{
+							DEBUG("[FSMWebRequest] Filesystem RENAME\n");
+						
+							FBOOL have = FSManagerCheckAccess( l->sl_FSM, origDecodedPath, actDev->f_ID, loggedSession->us_User, "--W---" );
+							if( have == TRUE )
+							{
+								actDev->f_SessionIDPTR = loggedSession->us_User->u_MainSessionID;
+								int error = actFS->Rename( actDev, origDecodedPath, nname );
+								sprintf( tmp, "ok<!--separate-->{ \"response\": \"%d\"}", error );
+						
+								if( notify == TRUE )
+								{
+									char *notifPath = CutNotificationPath( origDecodedPath );
+									if( notifPath != NULL )
+									{
+										DoorNotificationCommunicateChanges( l, loggedSession, actDev, notifPath );
+										FFree( notifPath );
+									}
+								}
+							
+								// delete Thumbnails
+								// ?module=system&command=thumbnaildelete&path=Path:to/filename&sessionid=358573695783
+							
+								int len = 512;
+								len += strlen( origDecodedPath );
+								char *command = FMalloc( len );
+								if( command != NULL )
+								{
+									snprintf( command, len, "command=thumbnaildelete&path=%s&sessionid=%s", origDecodedPath, loggedSession->us_SessionID );
+			
+									DEBUG("Run command via php: '%s'\n", command );
+									FULONG dataLength;
+
+									char *data = l->sl_PHPModule->Run( l->sl_PHPModule, "modules/system/module.php", command, &dataLength );
+									if( data != NULL )
+									{
+										if( strncmp( data, "ok", 2 ) == 0 )
+										{
+										}
+										FFree( data );
+									}
+									FFree( command );
+								}
+							}
+							else
+							{
+								char dictmsgbuf1[ 196 ];
+								snprintf( dictmsgbuf1, sizeof(dictmsgbuf1), l->sl_Dictionary->d_Msg[DICT_NO_ACCESS_TO], path );
+								snprintf( tmp, sizeof(tmp), "fail<!--separate-->{ \"response\": \"%s\", \"code\":\"%d\" }", dictmsgbuf1 , DICT_NO_ACCESS_TO );
+							}
 						}
 						else
 						{
 							char dictmsgbuf1[ 196 ];
-							snprintf( dictmsgbuf1, sizeof(dictmsgbuf1), l->sl_Dictionary->d_Msg[DICT_NO_ACCESS_TO], path );
-							snprintf( tmp, sizeof(tmp), "fail<!--separate-->{ \"response\": \"%s\", \"code\":\"%d\" }", dictmsgbuf1 , DICT_NO_ACCESS_TO );
+							snprintf( dictmsgbuf1, sizeof(dictmsgbuf1), l->sl_Dictionary->d_Msg[DICT_BAD_CHARS_USED], path );
+							snprintf( tmp, sizeof(tmp), "fail<!--separate-->{ \"response\": \"%s\", \"code\":\"%d\" }", dictmsgbuf1 , DICT_BAD_CHARS_USED );
 						}
 						
 						DEBUG("[FSMWebRequest] info command on FSYS: %s RENAME\n", actFS->GetPrefix() );
 						
 						HttpAddTextContent( response, tmp );
+						
+						FFree( nname );
 					}
 					else
 					{
@@ -742,6 +856,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 				*
 				* @param sessionid - (required) session id of logged user
 				* @param path - (required) path to file which you want to delete
+				* @param notify - send notification to other sessions/user about changes (by default set to true, set false to disable this)
 				* @return { response:0 } when success, otherwise error number
 				*/
 				/// @endcond
@@ -751,6 +866,19 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					DEBUG("[FSMWebRequest] Filesystem DELETE\n");
 					
 					char tmp[ 256 ];
+					FBOOL notify = TRUE;
+					el = HttpGetPOSTParameter( request, "notify" );
+					if( el == NULL ) el = HashmapGet( request->query, "notify" );
+					if( el != NULL )
+					{
+						if( el->data != NULL )
+						{
+							if( strcmp( (char *)el->data, "false" ) == 0 )
+							{
+								notify = FALSE;
+							}
+						}
+					}
 					
 					FBOOL have = TRUE;
 					
@@ -760,12 +888,12 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					}
 					else
 					{
-						have = FSManagerCheckAccess( l->sl_FSM, path, actDev->f_ID, loggedSession->us_User, "----D-" );
+						have = FSManagerCheckAccess( l->sl_FSM, origDecodedPath, actDev->f_ID, loggedSession->us_User, "----D-" );
 					}
 					
 					if( have == TRUE )
 					{
-						FLONG bytes = actFS->Delete( actDev, path );
+						FLONG bytes = actFS->Delete( actDev, origDecodedPath );
 						if( bytes >= 0 )
 						{
 							actDev->f_BytesStored -= bytes;
@@ -774,9 +902,43 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 								actDev->f_BytesStored = 0;
 							}
 							sprintf( tmp, "ok<!--separate-->{\"response\":\"%ld\"}", bytes );
-							DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
-							
+							if( notify == TRUE )
+							{
+								// send information about changes on disk
+								//DoorNotificationCommunicateChanges( l, loggedSession, actDev, origDecodedPath );
+								char *notifPath = CutNotificationPath( origDecodedPath );
+								if( notifPath != NULL )
+								{
+									DoorNotificationCommunicateChanges( l, loggedSession, actDev, notifPath );
+									FFree( notifPath );
+								}
+							}
+							// delete file in cache
 							CacheUFManagerFileDelete( l->sl_CacheUFM, loggedSession->us_ID, actDev->f_ID, origDecodedPath );
+							
+							// delete Thumbnails
+							// ?module=system&command=thumbnaildelete&path=Path:to/filename&sessionid=358573695783
+							
+							int len = 512;
+							len += strlen( origDecodedPath );
+							char *command = FMalloc( len );
+							if( command != NULL )
+							{
+								snprintf( command, len, "command=thumbnaildelete&path=%s&sessionid=%s", origDecodedPath, loggedSession->us_SessionID );
+			
+								DEBUG("Run command via php: '%s'\n", command );
+								FULONG dataLength;
+
+								char *data = l->sl_PHPModule->Run( l->sl_PHPModule, "modules/system/module.php", command, &dataLength );
+								if( data != NULL )
+								{
+									if( strncmp( data, "ok", 2 ) == 0 )
+									{
+									}
+									FFree( data );
+								}
+								FFree( command );
+							}
 						}
 						else
 						{
@@ -806,6 +968,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 				*
 				* @param sessionid - (required) session id of logged user
 				* @param path - (required) path which will be used to generate directory
+				* @param notify - send notification to other sessions/user about changes (by default set to true, set false to disable this)
 				* @return { response:0 } when success, otherwise error number
 				*/
 				/// @endcond
@@ -818,11 +981,27 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					DEBUG("[FSMWebRequest] Filesystem MAKEDIR: %s\n", path );
 					
 					char tmp[ 256 ];
+					FBOOL notify = TRUE;
+					el = HttpGetPOSTParameter( request, "notify" );
+					if( el == NULL ) el = HashmapGet( request->query, "notify" );
+					if( el != NULL )
+					{
+						if( el->data != NULL )
+						{
+							if( strcmp( (char *)el->data, "false" ) == 0 )
+							{
+								notify = FALSE;
+							}
+						}
+					}
 					
 					char *lpath = UrlDecodeToMem( path );
 					if( lpath != NULL )
 					{
 						FBOOL have = TRUE;
+						FBOOL badCharFound = FALSE;
+						int i, lastChar = 0;
+						int plen = strlen( lpath );
 						
 						if( request->h_RequestSource == HTTP_SOURCE_FC && l->sl_Sentinel != NULL &&  loggedSession->us_User == l->sl_Sentinel->s_User )
 						{
@@ -833,24 +1012,66 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 							have = FSManagerCheckAccess( l->sl_FSM, lpath, actDev->f_ID, loggedSession->us_User, "--W---" );
 						}
 						
+						// we must get only file/dir name to check it
+						for( i = 0 ; i < plen ; i++ )
+						{
+							if( lpath[ i ] == ':' || lpath[ i ] == '/' )
+							{
+								// file/dir name starts just after / or : sign
+								lastChar = i + 1;
+							}
+						}
+						
+						// find "bad" chars in file/dir name
+						for( i = lastChar ; i < plen ; i++ )
+						{
+							CHECK_BAD_CHARS( lpath, i, badCharFound );
+							/*
+							if( lpath[ i ] == '/' || lpath[ i ] == ':' || lpath[ i ] == '\'' )
+							{
+								badCharFound = TRUE;
+								break;
+							}
+							*/
+						}
+						
 						if( have == TRUE )
 						{
-							actDev->f_SessionIDPTR = loggedSession->us_User->u_MainSessionID;
-							int error = actFS->MakeDir( actDev, lpath );
+							if( badCharFound == FALSE )
+							{
+								actDev->f_SessionIDPTR = loggedSession->us_User->u_MainSessionID;
+								int error = actFS->MakeDir( actDev, lpath );
 						
-							if( error != 0 )
+								if( error != 0 )
+								{
+									char dictmsgbuf1[ 196 ];
+									snprintf( dictmsgbuf1, sizeof(dictmsgbuf1), l->sl_Dictionary->d_Msg[DICT_FUNCTION_RETURNED], "MakeDir", error );
+									snprintf( tmp, sizeof(tmp), "fail<!--separate-->{ \"response\": \"%s\", \"code\":\"%d\" }", dictmsgbuf1 , DICT_FUNCTION_RETURNED );
+								}
+								else
+								{
+									sprintf( tmp, "ok<!--separate-->{ \"response\": \"%d\"}", error );
+									DEBUG( "[FSMWebRequest] Makedir Notifying %s  pointer to SB %p\n", path, l );
+									
+									if( notify == TRUE )
+									{
+										char *notifPath = CutNotificationPath( origDecodedPath );
+										if( notifPath != NULL )
+										{
+											DoorNotificationCommunicateChanges( l, loggedSession, actDev, notifPath );
+											FFree( notifPath );
+										}
+										//DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
+									}
+								}
+								HttpAddTextContent( response, tmp );
+							}
+							else	// bad chars
 							{
 								char dictmsgbuf1[ 196 ];
-								snprintf( dictmsgbuf1, sizeof(dictmsgbuf1), l->sl_Dictionary->d_Msg[DICT_FUNCTION_RETURNED], "MakeDir", error );
-								snprintf( tmp, sizeof(tmp), "fail<!--separate-->{ \"response\": \"%s\", \"code\":\"%d\" }", dictmsgbuf1 , DICT_FUNCTION_RETURNED );
+								snprintf( dictmsgbuf1, sizeof(dictmsgbuf1), l->sl_Dictionary->d_Msg[DICT_BAD_CHARS_USED], path );
+								snprintf( tmp, sizeof(tmp), "fail<!--separate-->{ \"response\": \"%s\", \"code\":\"%d\" }", dictmsgbuf1 , DICT_BAD_CHARS_USED );
 							}
-							else
-							{
-								sprintf( tmp, "ok<!--separate-->{ \"response\": \"%d\"}", error );
-								DEBUG( "[FSMWebRequest] Makedir Notifying %s  pointer to SB %p\n", path, l );
-								DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
-							}
-							HttpAddTextContent( response, tmp );
 						}
 						else
 						{
@@ -1331,6 +1552,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 				* @param data - (required) data which will be stored in file
 				* @param size - (required) number of bytes which will be stored in file
 				* @param encoding - type of encoding, currently only "url" type is supported
+				* @param notify - send notification to other sessions/user about changes (by default set to true, set false to disable this)
 				* @return { FileDataStored : <number of bytes stored> } when success, otherwise error number
 				*/
 				/// @endcond
@@ -1390,6 +1612,20 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 						dataSize = strlen( fdata );
 					}
 					
+					FBOOL notify = TRUE;
+					el = HttpGetPOSTParameter( request, "notify" );
+					if( el == NULL ) el = HashmapGet( request->query, "notify" );
+					if( el != NULL )
+					{
+						if( el->data != NULL )
+						{
+							if( strcmp( (char *)el->data, "false" ) == 0 )
+							{
+								notify = FALSE;
+							}
+						}
+					}
+					
 					// TODO: Test UNSTABLE CODE
 					/*// Base64 instead
 					else if( el && strcmp( el->data, "base64" ) == 0 )
@@ -1437,7 +1673,16 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 									}
 									actFS->FileClose( actDev, fp );
 							
-									DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
+									if( notify == TRUE )
+									{
+										char *notifPath = CutNotificationPath( origDecodedPath );
+										if( notifPath != NULL )
+										{	
+											DoorNotificationCommunicateChanges( l, loggedSession, actDev, notifPath );
+											FFree( notifPath );
+										}
+										//DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
+									}
 								}
 								else
 								{
@@ -1493,7 +1738,6 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 				{
 					response = HttpNewSimpleA( HTTP_200_OK, request,  HTTP_HEADER_CONTENT_TYPE, (FULONG)  StringDuplicateN( DEFAULT_CONTENT_TYPE, 24 ),
 											   HTTP_HEADER_CONNECTION, (FULONG)StringDuplicateN( "close", 5 ),TAG_DONE, TAG_DONE );
-					
 					
 					char *topath = NULL;
 					el = HashmapGet( request->parsedPostContent, "to" );
@@ -1652,6 +1896,27 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 									}
 							
 									dstrootf->f_Operations--;
+									
+									int len = 512;
+									len += strlen( topath );
+									char *command = FMalloc( len );
+									if( command != NULL )
+									{
+										snprintf( command, len, "command=thumbnaildelete&path=%s&sessionid=%s", topath, loggedSession->us_SessionID );
+			
+										DEBUG("Run command via php: '%s'\n", command );
+										FULONG dataLength;
+
+										char *data = l->sl_PHPModule->Run( l->sl_PHPModule, "modules/system/module.php", command, &dataLength );
+										if( data != NULL )
+										{
+											if( strncmp( data, "ok", 2 ) == 0 )
+											{
+											}
+											FFree( data );
+										}
+										FFree( command );
+									}
 								}
 								else
 								{
@@ -1697,6 +1962,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 				*
 				* @param sessionid - (required) session id of logged user
 				* @param path - (required) path where file will be uploaded
+				* @param notify - send notification to other sessions/user about changes (by default set to true, set false to disable this)
 				* @return { Uploaded files: <number>} when success, otherwise error number
 				*/
 				/// @endcond
@@ -1718,11 +1984,26 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 						FERROR( "PATH == NULL\n" );
 					}
 					
+					FBOOL notify = TRUE;
+					el = HttpGetPOSTParameter( request, "notify" );
+					if( el == NULL ) el = HashmapGet( request->query, "notify" );
+					if( el != NULL )
+					{
+						if( el->data != NULL )
+						{
+							if( strcmp( (char *)el->data, "false" ) == 0 )
+							{
+								notify = FALSE;
+							}
+						}
+					}
+					
 					if( ( tmpPath = ( char * )FCalloc( strlen(path) + 2048, sizeof(char) ) ) != NULL )
 					{
 						HttpFile *file = request->h_FileList;
 						FBOOL fileNameIsTmpPath = FALSE;
 						
+						DEBUG("File %p\n", file );
 						if( file != NULL )
 						{
 							// Mind situations where hf_FileName is uploaded filename, where
@@ -1738,13 +2019,24 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 						
 						while( file != NULL )
 						{
+							DEBUG("Going throug files\n");
 							if( targetPath )
 							{
 								sprintf( tmpPath, "%s", targetPath );
 							}
 							else if( !fileNameIsTmpPath )
 							{
-								sprintf( tmpPath, "%s%s", path, file->hf_FileName );
+								char *t = UrlDecodeToMem( file->hf_FileName );
+								if( t != NULL )
+								{
+									DEBUG("[FileSaved as: %s\n", file->hf_FileName );
+									sprintf( tmpPath, "%s%s", path, t );
+									FFree( t );
+								}
+								else
+								{
+									sprintf( tmpPath, "%s", path );
+								}
 							}
 							else
 							{
@@ -1760,6 +2052,27 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 							else
 							{
 								dstPath =  &tmpPath[ dpos + 1 ] ;
+							}
+							
+							// if there is upload to not existing Downloads folder, FriendCore must create it
+							// https://app.yodiz.com/plan/pages/board.vz?cid=33486#/app/tk-1465
+							DEBUG("original path: %s\n", originalPath );
+							if( strncmp( originalPath, "Home:Downloads/", 15 ) == 0 )
+							{
+								BufString *bs = NULL;
+								DEBUG("User want to upload file into Home:Downloads\n");
+								bs = actFS->Info( actDev, originalPath );
+								if( bs != NULL )
+								{
+									DEBUG("Got response from file system: %s response: %s\n", tmpPath, bs->bs_Buffer );
+									// seems directory do not exist, FriendCore must create it
+									if( strncmp( bs->bs_Buffer, "fail", 4 ) == 0 )
+									{
+										int err = actFS->MakeDir( actDev, "Downloads" );
+										DEBUG("Makedir called, response: %d\n", err );
+									}
+									BufStringDelete( bs );
+								}
 							}
 							
 							DEBUG( "[FSMWebRequest] Trying to save file %s (path: %s, devname: %s)\n", dstPath, path, devname );
@@ -1816,7 +2129,16 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 						*result = 200;
 					}
 					
-					DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
+					if( notify == TRUE )
+					{
+						char *notifPath = CutNotificationPath( origDecodedPath );
+						if( notifPath != NULL )
+						{
+							DoorNotificationCommunicateChanges( l, loggedSession, actDev, notifPath );
+							FFree( notifPath );
+						}
+						//DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
+					}
 					
 					DEBUG("[FSMWebRequest] Upload done\n");
 				}		// file/upload
@@ -1870,7 +2192,6 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					response = HttpNewSimpleA( HTTP_200_OK, request,  HTTP_HEADER_CONTENT_TYPE, (FULONG)  StringDuplicateN( DEFAULT_CONTENT_TYPE, 24 ),
 											   HTTP_HEADER_CONNECTION, (FULONG)StringDuplicateN( "close", 5 ),TAG_DONE, TAG_DONE );
 					
-					char tbuffer[ SHARING_BUFFER_SIZE ];
 					char userid[ 512 ];
 					char name[ 256 ];
 					char dstfield[10];
@@ -1896,105 +2217,116 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					FHandler *actFS = (FHandler *)actDev->f_FSys;
 					FBOOL sharedFile = FALSE;
 					FBOOL alreadyExist = FALSE;
+					char hashmap[ 512 ];
+					hashmap[ 0 ] = 0;
 
-					char *checkquery = NULL;
+					//char *checkquery = NULL;
 					char *fortestpurp = FMalloc( 2048 ); //[ 2048 ];
 					snprintf( fortestpurp, 2048, "%s:%s", devname, path );
 					
-					FileShared *tmpfs = FileSharedNew( fortestpurp, name );
-					char hashmap[ 512 ];
+					char *dest = UrlDecodeToMem( path );
 					
-					if( tmpfs != NULL )
+					SQLLibrary *sqllib = l->LibrarySQLGet( l );
+					if( sqllib != NULL )
 					{
-						tmpfs->fs_IDUser = loggedSession->us_User->u_ID;
-						
-						tmpfs->fs_DeviceName = StringDuplicate( devname );
-						
-						tmpfs->fs_DstUsers = StringDuplicate( dstfield );
-						
-						// Make a unique hash
-						char tmp[ 512 ];
-						snprintf( tmp, sizeof(tmp), "%s%d%d%d", path, rand() % 999, rand() % 999, rand() % 999 );
-						StrToMD5Str( hashmap, 512, tmp, strlen( tmp ) );
-						tmpfs->fs_Hash = StringDuplicate( hashmap );
-						
-						checkquery = FMalloc( 2048 );//[ 2048 ];
-						char dest[ 512 ]; 
-						
-						UrlDecode( dest, path );
-						// TODO: Check on device ID..
-						sprintf( checkquery, " FFileShared where `UserID`='%ld' AND `Path`='%s:%s'", loggedSession->us_User->u_ID, devname, dest );
-						
-						SQLLibrary *sqllib = l->LibrarySQLGet( l );
-						tmpfs->fs_CreatedTime = time( NULL );
-						if( sqllib != NULL )
+						int qsize = 512 + strlen( dest );
+
+						char *qery = FMalloc( qsize );
+						//qery[ 1024 ] = 0;
+						sqllib->SNPrintF( sqllib, qery, qsize, "SELECT Hash FROM FFileShared where `UserID`='%ld' AND `Path`='%s:%s'", loggedSession->us_User->u_ID, devname, dest );
+						void *res = sqllib->Query( sqllib, qery );
+						if( res != NULL )
 						{
-							int numR = sqllib->NumberOfRecords( sqllib, FileSharedTDesc, checkquery );
-							DEBUG( "[FSMWebRequest] Number of records is: %d (%s)\n", numR, checkquery );
-						
-							struct tm* ti;
-							ti = localtime( &(tmpfs->fs_CreatedTime) );
-							tmpfs->fs_CreateTimeTM.tm_year = ti->tm_year + 1900;
-							tmpfs->fs_CreateTimeTM.tm_mon = ti->tm_mon;
-							tmpfs->fs_CreateTimeTM.tm_mday = ti->tm_mday;
-							
-							tmpfs->fs_CreateTimeTM.tm_hour = ti->tm_hour;
-							tmpfs->fs_CreateTimeTM.tm_min = ti->tm_min;
-							tmpfs->fs_CreateTimeTM.tm_sec = ti->tm_sec;
-							
+							char **row;
+							if( ( row = sqllib->FetchRow( sqllib, res ) ) )
 							{
+								if( row[ 0 ] != NULL )
+								{
+									strcpy( hashmap, row[ 0 ] );
+								}
+							}
+							sqllib->FreeResult( sqllib, res );
+						}
+						
+						// if entry do not exist in database
+						if( hashmap[ 0 ] == 0 )
+						{
+							FileShared *tmpfs = FileSharedNew( fortestpurp, name );
+
+							if( tmpfs != NULL )
+							{
+								tmpfs->fs_IDUser = loggedSession->us_User->u_ID;
+						
+								tmpfs->fs_DeviceName = StringDuplicate( devname );
+						
+								tmpfs->fs_DstUsers = StringDuplicate( dstfield );
+						
+								// Make a unique hash
+								char tmp[ 512 ];
+								snprintf( tmp, sizeof(tmp), "%s%d%d%d", path, rand() % 999, rand() % 999, rand() % 999 );
+								StrToMD5Str( hashmap, 512, tmp, strlen( tmp ) );
+								tmpfs->fs_Hash = StringDuplicate( hashmap );
+								tmpfs->fs_CreatedTime = time( NULL );
+								/*
+								struct tm* ti;
+								ti = localtime( &(tmpfs->fs_CreatedTime) );
+								tmpfs->fs_CreateTimeTM.tm_year = ti->tm_year + 1900;
+								tmpfs->fs_CreateTimeTM.tm_mon = ti->tm_mon;
+								tmpfs->fs_CreateTimeTM.tm_mday = ti->tm_mday;
+							
+								tmpfs->fs_CreateTimeTM.tm_hour = ti->tm_hour;
+								tmpfs->fs_CreateTimeTM.tm_min = ti->tm_min;
+								tmpfs->fs_CreateTimeTM.tm_sec = ti->tm_sec;
+								*/
 								if( sqllib->Save( sqllib, FileSharedTDesc, tmpfs ) == 0 )
 								{
 									sharedFile = TRUE;
 								}
+								else
+								{
+									Log( FLOG_ERROR, "Cannot store hash in FFileShared. Hash: %s Path %s\n", hashmap, path );
+								}
+								
+								FileSharedDeleteAll( tmpfs );
 							}
-						
-						/*
-						 *						else
-						 *						{
-						 *							FileSharedDelete( tmpfs );
-						 *							
-						 *							int entries = 0;
-						 *							if( ( tmpfs = sqllib->Load( sqllib, FileSharedTDesc, check, &entries ) ) )
-						 *							{
-						 *								sprintf( hashmap, "%s", tmpfs->fs_Hash );
-					}
-					alreadyExist = TRUE;
-					}*/
-						
-							l->LibrarySQLDrop( l, sqllib );
-						}
-						
-						FileSharedDeleteAll( tmpfs );
-					}
-					else
-					{
-						FERROR("Cannot allocate memory for shared file!\n");
-					}
-					
-					{
-						int size = 0;
-						char *tmp = FMalloc( 2048 );
-						if( sharedFile == TRUE )
-						{
-							size = snprintf( tmp, 2048, "ok<!--separate-->{\"hash\":\"%s\", \"name\":\"%s\" }", hashmap, name );
-						}
-						else if( alreadyExist )
-						{
-							size = snprintf( tmp, 2048, "ok<!--separate-->{\"hash\":\"%s\", \"name\":\"%s\" }", hashmap, name );
+							else
+							{
+								FERROR("Cannot allocate memory for shared file!\n");
+							}
 						}
 						else
 						{
-							size = snprintf( tmp, 2048, "fail<!--separate-->{ \"response\": \"%s\" }", l->sl_Dictionary->d_Msg[DICT_CANNOT_SHARE_FILE] );
+							alreadyExist = TRUE;
 						}
 						
-						DEBUG("RESPONSE : '%s'\n", tmp );
-						
-						HttpSetContent( response, tmp, size );
-						*result = 200;
+						l->LibrarySQLDrop( l, sqllib );
+						FFree( qery );
+					}
+
+					int size = 0;
+					char *tmp = FMalloc( 2048 );
+					if( sharedFile == TRUE )
+					{
+						size = snprintf( tmp, 2048, "ok<!--separate-->{\"hash\":\"%s\", \"name\":\"%s\" }", hashmap, name );
+					}
+					else if( alreadyExist == TRUE )
+					{
+						size = snprintf( tmp, 2048, "ok<!--separate-->{\"hash\":\"%s\", \"name\":\"%s\" }", hashmap, name );
+					}
+					else
+					{
+						size = snprintf( tmp, 2048, "fail<!--separate-->{ \"response\": \"%s\" }", l->sl_Dictionary->d_Msg[DICT_CANNOT_SHARE_FILE] );
 					}
 					
-					FFree( checkquery );
+					DEBUG("RESPONSE : '%s'\n", tmp );
+					
+					HttpSetContent( response, tmp, size );
+					*result = 200;
+					
+					if( dest != NULL )
+					{
+						FFree( dest );
+					}
 					FFree( fortestpurp );
 				}
 				
@@ -2345,6 +2677,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 							if( error == 0 )
 							{
 								snprintf( answer, sizeof(answer),  "ok<!--separate-->{ \"Result\": \"Entry removed\"}" );
+								HttpAddTextContent( response, answer );
 							}
 							else
 							{
@@ -2363,7 +2696,6 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 							snprintf( dictmsgbuf, sizeof(dictmsgbuf), "fail<!--separate-->{ \"response\": \"%s\", \"code\":\"%d\" }", dictmsgbuf1 , DICT_PARAMETERS_MISSING );
 							HttpAddTextContent( response, dictmsgbuf );
 						}
-						HttpAddTextContent( response, answer );
 						
 						l->LibrarySQLDrop( l, sqllib );
 					}
@@ -2390,7 +2722,8 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					response = HttpNewSimpleA( HTTP_200_OK, request,  HTTP_HEADER_CONTENT_TYPE, (FULONG)  StringDuplicateN( DEFAULT_CONTENT_TYPE, 24 ),
 						HTTP_HEADER_CONNECTION, (FULONG)StringDuplicateN( "close", 5 ),TAG_DONE, TAG_DONE );
 					
-					int error = DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
+					int error = DoorNotificationCommunicateChanges( l, loggedSession, actDev, origDecodedPath );
+					//int error = DoorNotificationCommunicateChanges( l, loggedSession, actDev, path );
 					
 					if( error == 0 )
 					{
@@ -2415,6 +2748,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 				* @param files - (required) path to files or directories which you want to archive. Entries must be separated by semicolon
 				* @param archiver - (required) type or archivizer. Currently only zip is supported
 				* @param destination - (required) path to place where archive will be stored 
+				* @param notify - send notification to other sessions/user about changes (by default set to true, set false to disable this)
 				* @return { Result: 0 } when success, otherwise error number
 				*/
 				/// @endcond
@@ -2457,6 +2791,20 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					if( el != NULL )
 					{
 						archpath = UrlDecodeToMem( (char *)el->data );
+					}
+					
+					FBOOL notify = TRUE;
+					el = HttpGetPOSTParameter( request, "notify" );
+					if( el == NULL ) el = HashmapGet( request->query, "notify" );
+					if( el != NULL )
+					{
+						if( el->data != NULL )
+						{
+							if( strcmp( (char *)el->data, "false" ) == 0 )
+							{
+								notify = FALSE;
+							}
+						}
 					}
 					
 					if( archiver != NULL && files != NULL && archpath != NULL && source != NULL )
@@ -2546,7 +2894,23 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 													}
 												}
 											
-												int err2 = DoorNotificationCommunicateChanges( l, loggedSession, dstdevice, archpath );
+												{
+													/*
+													char *notifPath = CutNotificationPath( archpath );
+													if( notifPath != NULL )
+													{
+														if( notify == TRUE )
+														{
+															DoorNotificationCommunicateChanges( l, loggedSession, dstdevice, notifPath );
+														}
+														FFree( notifPath );
+													}
+													*/
+													if( notify == TRUE )
+													{
+														int err2 = DoorNotificationCommunicateChanges( l, loggedSession, dstdevice, archpath );
+													}
+												}
 											
 												HttpAddTextContent( response,  "ok<!--separate-->{ \"Result\": 0 }" );
 											}
@@ -2625,6 +2989,7 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 				* @param sessionid - (required) session id of logged user
 				* @param path - (required) path to place where archive will be decompressed
 				* @param archiver - (required) type or archivizer. Currently only zip is supported
+				* @param notify - send notification to other sessions/user about changes (by default set to true, set false to disable this)
 				* @return { Result: 0 } when success, otherwise error number
 				*/
 				/// @endcond
@@ -2640,6 +3005,20 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 					if( el != NULL )
 					{
 						archiver = (char *)el->data;
+					}
+					
+					FBOOL notify = TRUE;
+					el = HttpGetPOSTParameter( request, "notify" );
+					if( el == NULL ) el = HashmapGet( request->query, "notify" );
+					if( el != NULL )
+					{
+						if( el->data != NULL )
+						{
+							if( strcmp( (char *)el->data, "false" ) == 0 )
+							{
+								notify = FALSE;
+							}
+						}
 					}
 					
 					DEBUG("[FSMWebRequest] decompress %s\n", archiver );
@@ -2768,8 +3147,21 @@ Http *FSMWebRequest( void *m, char **urlpath, Http *request, UserSession *logged
 									
 									int error = FileUploadFileOrDirectory( request, loggedSession, dsttmp, dstname, filesExtracted );
 								
-									int err2 = DoorNotificationCommunicateChanges( l, loggedSession, actDev, dsttmp );
-									
+									if( notify == TRUE )
+									{
+										int dsttmpLen = strlen( dsttmp );
+										char *dsttmpDup = FCalloc( dsttmpLen+16, sizeof(char) );// StringDuplicate( dsttmp );
+										if( dsttmpDup != NULL )
+										{
+											strcpy( dsttmpDup, dsttmp );
+											if( dsttmpDup[ dsttmpLen-1 ] != '/' )
+											{
+												dsttmpDup[ dsttmpLen ] = '/';
+											}
+											int err2 = DoorNotificationCommunicateChanges( l, loggedSession, actDev, dsttmpDup );
+											FFree( dsttmpDup );
+										}
+									}
 									FFree( dsttmp );
 								}
 								

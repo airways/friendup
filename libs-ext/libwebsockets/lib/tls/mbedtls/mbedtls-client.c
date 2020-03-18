@@ -1,25 +1,28 @@
 /*
- * libwebsockets - mbedtls-specific client TLS code
+ * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2010-2017 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
-#include "core/private.h"
+#include "private-lib-core.h"
 
 static int
 OpenSSL_client_verify_callback(int preverify_ok, X509_STORE_CTX *x509_ctx)
@@ -55,8 +58,10 @@ lws_ssl_client_bio_create(struct lws *wsi)
 	}
 
 	wsi->tls.ssl = SSL_new(wsi->vhost->tls.ssl_client_ctx);
-	if (!wsi->tls.ssl)
+	if (!wsi->tls.ssl) {
+		lwsl_info("%s: SSL_new() failed\n", __func__);
 		return -1;
+	}
 
 	if (wsi->vhost->tls.ssl_info_event_mask)
 		SSL_set_info_callback(wsi->tls.ssl, lws_ssl_info_callback);
@@ -140,15 +145,13 @@ lws_tls_client_confirm_peer_cert(struct lws *wsi, char *ebuf, int ebuf_len)
 
 	if (!peer) {
 		lwsl_info("peer did not provide cert\n");
+		lws_snprintf(ebuf, ebuf_len, "no peer cert");
 
 		return -1;
 	}
 	lwsl_info("peer provided cert\n");
 
 	n = SSL_get_verify_result(wsi->tls.ssl);
-	lws_latency(wsi->context, wsi,
-			"SSL_get_verify_result LWS_CONNMODE..HANDSHAKE", n, n > 0);
-
         lwsl_debug("get_verify says %d\n", n);
 
 	if (n == X509_V_OK)
@@ -177,7 +180,7 @@ lws_tls_client_confirm_peer_cert(struct lws *wsi, char *ebuf, int ebuf_len)
 		"server's cert didn't look good, X509_V_ERR = %d: %s\n",
 		 n, ERR_error_string(n, sb));
 	lwsl_info("%s\n", ebuf);
-	lws_ssl_elaborate_error();
+	lws_tls_err_describe_clear();
 
 	return -1;
 }
@@ -190,13 +193,14 @@ lws_tls_client_create_vhost_context(struct lws_vhost *vh,
 				    const void *ca_mem,
 				    unsigned int ca_mem_len,
 				    const char *cert_filepath,
+				    const void *cert_mem,
+				    unsigned int cert_mem_len,
 				    const char *private_key_filepath)
 {
 	X509 *d2i_X509(X509 **cert, const unsigned char *buffer, long len);
 	SSL_METHOD *method = (SSL_METHOD *)TLS_client_method();
 	unsigned long error;
-	lws_filepos_t len;
-	uint8_t *buf;
+	int n;
 
 	if (!method) {
 		error = ERR_get_error();
@@ -219,14 +223,22 @@ lws_tls_client_create_vhost_context(struct lws_vhost *vh,
 		return 0;
 
 	if (ca_filepath) {
+#if !defined(LWS_PLAT_OPTEE)
+		uint8_t *buf;
+		lws_filepos_t len;
+
 		if (alloc_file(vh->context, ca_filepath, &buf, &len)) {
 			lwsl_err("Load CA cert file %s failed\n", ca_filepath);
 			return 1;
 		}
 		vh->tls.x509_client_CA = d2i_X509(NULL, buf, len);
 		free(buf);
+		lwsl_notice("Loading client CA for verification %s\n", ca_filepath);
+#endif
 	} else {
 		vh->tls.x509_client_CA = d2i_X509(NULL, (uint8_t*)ca_mem, ca_mem_len);
+		lwsl_notice("%s: using mem client CA cert %d\n",
+			    __func__, ca_mem_len);
 	}
 
 	if (!vh->tls.x509_client_CA) {
@@ -239,7 +251,68 @@ lws_tls_client_create_vhost_context(struct lws_vhost *vh,
 	else
 		SSL_CTX_add_client_CA(vh->tls.ssl_ctx, vh->tls.x509_client_CA);
 
-	lwsl_notice("client loaded CA for verification %s\n", ca_filepath);
+	/* support for client-side certificate authentication */
+	if (cert_filepath) {
+#if !defined(LWS_PLAT_OPTEE)
+		uint8_t *buf;
+		lws_filepos_t amount;
+
+		if (lws_tls_use_any_upgrade_check_extant(cert_filepath) !=
+				LWS_TLS_EXTANT_YES &&
+		    (info->options & LWS_SERVER_OPTION_IGNORE_MISSING_CERT))
+			return 0;
+
+		lwsl_notice("%s: doing cert filepath %s\n", __func__,
+				cert_filepath);
+
+		if (alloc_file(vh->context, cert_filepath, &buf, &amount))
+			return 1;
+
+		buf[amount++] = '\0';
+
+		SSL_CTX_use_PrivateKey_ASN1(0, vh->tls.ssl_client_ctx,
+				buf, amount);
+
+		n = SSL_CTX_use_certificate_ASN1(vh->tls.ssl_client_ctx,
+				amount, buf);
+		lws_free(buf);
+		if (n < 1) {
+			lwsl_err("problem %d getting cert '%s'\n", n,
+				 cert_filepath);
+			lws_tls_err_describe_clear();
+			return 1;
+		}
+
+		lwsl_notice("Loaded client cert %s\n", cert_filepath);
+#endif
+	} else if (cert_mem && cert_mem_len) {
+		// lwsl_hexdump_notice(cert_mem, cert_mem_len - 1);
+		SSL_CTX_use_PrivateKey_ASN1(0, vh->tls.ssl_client_ctx,
+				cert_mem, cert_mem_len - 1);
+		n = SSL_CTX_use_certificate_ASN1(vh->tls.ssl_client_ctx,
+						 cert_mem_len, cert_mem);
+		if (n < 1) {
+			lwsl_err("%s: problem interpreting client cert\n",
+				 __func__);
+			lws_tls_err_describe_clear();
+			return 1;
+		}
+		lwsl_notice("%s: using mem client cert %d\n",
+			    __func__, cert_mem_len);
+	}
 
 	return 0;
 }
+
+int
+lws_tls_client_vhost_extra_cert_mem(struct lws_vhost *vh,
+                const uint8_t *der, size_t der_len)
+{
+	if (SSL_CTX_add_client_CA_ASN1(vh->tls.ssl_client_ctx, der_len, der) != 1) {
+		lwsl_err("%s: failed\n", __func__);
+			return 1;
+	}
+
+	return 0;
+}
+

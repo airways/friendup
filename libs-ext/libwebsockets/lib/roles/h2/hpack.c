@@ -1,25 +1,28 @@
 /*
- * lib/hpack.c
+ * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2014-2017 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
-#include "core/private.h"
+#include "private-lib-core.h"
 
 /*
  * Official static header table for HPACK
@@ -391,10 +394,9 @@ lws_token_from_index(struct lws *wsi, int index, const char **arg, int *len,
 		return -1;
 	}
 
-	if (index < (int)LWS_ARRAY_SIZE(static_token) ||
-	    index >= (int)LWS_ARRAY_SIZE(static_token) + dyn->used_entries) {
+	if (index >= (int)LWS_ARRAY_SIZE(static_token) + dyn->used_entries) {
 		lwsl_info("  %s: adjusted index %d >= %d\n", __func__, index,
-			    dyn->used_entries);
+				(int)LWS_ARRAY_SIZE(static_token) + dyn->used_entries);
 		lws_h2_goaway(wsi, H2_ERR_COMPRESSION_ERROR,
 			      "index out of range");
 		return -1;
@@ -536,7 +538,8 @@ lws_dynamic_token_insert(struct lws *wsi, int hdr_len,
 	if (lws_hdr_index != LWS_HPACK_IGNORE_ENTRY) {
 		if (dyn->entries[new_index].value)
 			lws_free_set_NULL(dyn->entries[new_index].value);
-		dyn->entries[new_index].value = lws_malloc(len + 1, "hpack dyn");
+		dyn->entries[new_index].value =
+				lws_malloc(len + 1, "hpack dyn");
 		if (!dyn->entries[new_index].value)
 			return 1;
 
@@ -596,6 +599,11 @@ lws_hpack_dynamic_size(struct lws *wsi, int size)
 		  (int)dyn->num_entries, size,
 		  nwsi->vhost->h2.set.s[H2SET_HEADER_TABLE_SIZE]);
 
+	if (!size) {
+		size = dyn->num_entries * 8;
+		lws_hpack_destroy_dynamic_header(wsi);
+	}
+
 	if (size > (int)nwsi->vhost->h2.set.s[H2SET_HEADER_TABLE_SIZE]) {
 		lwsl_info("rejecting hpack dyn size %u vs %u\n", size,
 				nwsi->vhost->h2.set.s[H2SET_HEADER_TABLE_SIZE]);
@@ -644,7 +652,8 @@ lws_hpack_dynamic_size(struct lws *wsi, int size)
 
 	if (dyn->entries) {
 		for (n = 0; n < min; n++) {
-			m = (dyn->pos - dyn->used_entries + n) % dyn->num_entries;
+			m = (dyn->pos - dyn->used_entries + n) %
+						dyn->num_entries;
 			if (m < 0)
 				m += dyn->num_entries;
 			dte[n] = dyn->entries[m];
@@ -859,7 +868,7 @@ int lws_hpack_interpret(struct lws *wsi, unsigned char c)
 			}
 			/* indexed header */
 			h2n->hpack_type = HPKT_INDEXED_HDR_6_VALUE_INCR;
-			lwsl_header("   HPKT_INDEXED_HDR_6_VALUE_INCR (hdr %d)\n",
+			lwsl_header(" HPKT_INDEXED_HDR_6_VALUE_INCR (hdr %d)\n",
 				   c & 0x3f);
 			h2n->hdr_idx = c & 0x3f;
 			if ((c & 0x3f) == 0x3f) {
@@ -894,7 +903,7 @@ int lws_hpack_interpret(struct lws *wsi, unsigned char c)
 			}
 			if (c == 0x10) { /* literal name NEVER */
 				h2n->hpack_type = HPKT_LITERAL_HDR_VALUE_NEVER;
-				lwsl_header("   HPKT_LITERAL_HDR_VALUE_NEVER\n");
+				lwsl_header("  HPKT_LITERAL_HDR_VALUE_NEVER\n");
 				h2n->hpack = HPKS_HLEN;
 				h2n->value = 0;
 				break;
@@ -903,7 +912,7 @@ int lws_hpack_interpret(struct lws *wsi, unsigned char c)
 			/* indexed name */
 			if (c & 0x10) {
 				h2n->hpack_type = HPKT_INDEXED_HDR_4_VALUE_NEVER;
-				lwsl_header("   HPKT_LITERAL_HDR_4_VALUE_NEVER\n");
+				lwsl_header("HPKT_LITERAL_HDR_4_VALUE_NEVER\n");
 			} else {
 				h2n->hpack_type = HPKT_INDEXED_HDR_4_VALUE;
 				lwsl_header("   HPKT_INDEXED_HDR_4_VALUE\n");
@@ -993,6 +1002,13 @@ int lws_hpack_interpret(struct lws *wsi, unsigned char c)
 			h2n->hpack = HPKS_HLEN_EXT;
 			break;
 		}
+
+		if (h2n->value && !h2n->hpack_len) {
+			lwsl_debug("%s: zero-length header data\n", __func__);
+			h2n->hpack = HPKS_TYPE;
+			goto fin;
+		}
+
 pre_data:
 		h2n->hpack = HPKS_DATA;
 		if (!h2n->value || !h2n->hdr_idx) {
@@ -1035,7 +1051,8 @@ pre_data:
 		default:
 			if (n != -1 && n != LWS_HPACK_IGNORE_ENTRY &&
 			    lws_frag_start(wsi, n)) {
-				lwsl_header("%s: frag start failed\n", __func__);
+				lwsl_header("%s: frag start failed\n",
+					    __func__);
 				return 1;
 			}
 			break;
@@ -1114,7 +1131,8 @@ pre_data:
 						}
 					}
 					if (lws_frag_append(wsi, c1)) {
-						lwsl_notice("%s: frag app fail\n",
+						lwsl_notice(
+							"%s: frag app fail\n",
 							    __func__);
 						return 1;
 					}
@@ -1168,7 +1186,7 @@ swallow:
 				      "Huffman padding excessive or wrong");
 			return 1;
 		}
-
+fin:
 		if (!h2n->value && (
 		    h2n->hpack_type == HPKT_LITERAL_HDR_VALUE ||
 		    h2n->hpack_type == HPKT_LITERAL_HDR_VALUE_INCR ||
@@ -1186,6 +1204,9 @@ swallow:
 			}
 
 			if (ah->parser_state == WSI_TOKEN_NAME_PART ||
+#if defined(LWS_WITH_CUSTOM_HEADERS)
+			    ah->parser_state == WSI_TOKEN_UNKNOWN_VALUE_PART ||
+#endif
 			    ah->parser_state == WSI_TOKEN_SKIPPING) {
 				h2n->unknown_header = 1;
 				ah->parser_state = -1;
@@ -1334,7 +1355,8 @@ int lws_add_http2_header_by_name(struct lws *wsi, const unsigned char *name,
 {
 	int len;
 
-	lwsl_header("%s: %p  %s:%s\n", __func__, *p, name, value);
+	lwsl_header("%s: %p  %s:%s (len %d)\n", __func__, *p, name, value,
+					length);
 
 	len = (int)strlen((char *)name);
 	if (len)

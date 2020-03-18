@@ -1,22 +1,25 @@
-/*
- * libwebsockets - trie
+ /*
+ * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  *
  * The functions allow
  *
@@ -30,8 +33,8 @@
  *    having to load it all in memory
  */
 
-#include "core/private.h"
-#include "misc/fts/private.h"
+#include "private-lib-core.h"
+#include "private-lib-misc-fts.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -160,7 +163,7 @@ struct lws_fts {
 	unsigned char agg[128];
 };
 
-/* since the kernel case allocates >2GB, no point keeping this too low */
+/* since the kernel case allocates >300MB, no point keeping this too low */
 
 #define TRIE_LWSAC_BLOCK_SIZE (1024 * 1024)
 
@@ -261,7 +264,8 @@ lws_fts_create(int fd)
 
 	t->fd = fd;
 	t->lwsac_head = lwsac_head;
-	t->root = lwsac_use(&lwsac_head, sizeof(*t->root), TRIE_LWSAC_BLOCK_SIZE);
+	t->root = lwsac_use(&lwsac_head, sizeof(*t->root),
+			    TRIE_LWSAC_BLOCK_SIZE);
 	if (!t->root)
 		goto unwind;
 
@@ -349,7 +353,7 @@ lws_fts_file_index(struct lws_fts *t, const char *filepath, int filepath_len,
 
 static struct lws_fts_entry *
 lws_fts_entry_child_add(struct lws_fts *t, unsigned char c,
-			 struct lws_fts_entry *parent)
+			struct lws_fts_entry *parent)
 {
 	struct lws_fts_entry *e, **pe;
 
@@ -457,7 +461,7 @@ finalize_per_input(struct lws_fts *t)
 
 	spill(0, 1);
 
-	assert(lseek(t->fd, 0, SEEK_END) == t->c);
+	assert(lseek(t->fd, 0, SEEK_END) == (off_t)t->c);
 
 	if (t->lwsac_input_head) {
 		lwsac_input_size = lwsac_total_alloc(t->lwsac_input_head);
@@ -537,9 +541,9 @@ name_entry(struct lws_fts_entry *e1, char *s, int len)
 
 int
 lws_fts_fill(struct lws_fts *t, uint32_t file_index, const char *buf,
-	      size_t len)
+	     size_t len)
 {
-	unsigned long long tf = lws_time_in_microseconds();
+	unsigned long long tf = lws_now_usecs();
 	unsigned char c, linetable[256], vlibuf[8];
 	struct lws_fts_entry *e, *e1, *dcl;
 	struct lws_fts_instance_file *tif;
@@ -900,7 +904,7 @@ seal:
 
 				e = lws_fts_entry_child_add(t, c, t->parser);
 				if (!e) {
-					lwsl_err("%s: lws_fts_entry_child_add fail2\n",
+					lwsl_err("%s: child_add fail2\n",
 						 __func__);
 					return 1;
 				}
@@ -1066,7 +1070,7 @@ after:
 		return 1;
 	}
 
-	assert(lseek(t->fd, 0, SEEK_END) == t->c);
+	assert(lseek(t->fd, 0, SEEK_END) == (off_t)t->c);
 
 	if (lseek(t->fd, t->c, SEEK_SET) < 0) {
 		lwsl_err("%s: end seek failed\n", __func__);
@@ -1082,7 +1086,7 @@ after:
 
 	/* dump the collected per-input instance and line data, and free it */
 
-	t->agg_trie_creation_us += lws_time_in_microseconds() - tf;
+	t->agg_trie_creation_us += lws_now_usecs() - tf;
 
 	return 0;
 }
@@ -1093,7 +1097,7 @@ int
 lws_fts_serialize(struct lws_fts *t)
 {
 	struct lws_fts_filepath *fp = t->filepath_list, *ofp;
-	unsigned long long tf = lws_time_in_microseconds();
+	unsigned long long tf = lws_now_usecs();
 	struct lws_fts_entry *e, *e1, *s[256];
 	unsigned char buf[8192], stasis;
 	int n, bp, sp = 0, do_parent;
@@ -1330,7 +1334,7 @@ lws_fts_serialize(struct lws_fts *t)
 
 	spill(0, 1);
 
-	assert(lseek(t->fd, 0, SEEK_END) == t->c);
+	assert(lseek(t->fd, 0, SEEK_END) == (off_t)t->c);
 
 	/* drop the correct root trie offset + file length into the header */
 
@@ -1353,7 +1357,7 @@ lws_fts_serialize(struct lws_fts *t)
 		    (int)(t->agg_trie_creation_us / 1000),
 		    (int)(lwsac_total_alloc(t->lwsac_head) / 1024),
 		    (int)(t->worst_lwsac_input_size / 1024),
-		    (int)((lws_time_in_microseconds() - tf) / 1000),
+		    (int)((lws_now_usecs() - tf) / 1000),
 		    (int)(t->c / 1024));
 
 	return 0;

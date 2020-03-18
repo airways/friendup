@@ -1,7 +1,7 @@
 /*
  * lws-minimal-ws-server
  *
- * Copyright (C) 2018 Andy Green <andy@warmcat.com>
+ * Written in 2010-2019 by Andy Green <andy@warmcat.com>
  *
  * This file is made available under the Creative Commons CC0 1.0
  * Universal Public Domain Dedication.
@@ -25,6 +25,11 @@ static struct lws_protocols protocols[] = {
 	{ "http", lws_callback_http_dummy, 0, 0 },
 	LWS_PLUGIN_PROTOCOL_MINIMAL,
 	{ NULL, NULL, 0, 0 } /* terminator */
+};
+
+static const lws_retry_bo_t retry = {
+	.secs_since_valid_ping = 3,
+	.secs_since_valid_hangup = 10,
 };
 
 static int interrupted;
@@ -79,14 +84,23 @@ int main(int argc, const char **argv)
 	info.port = 7681;
 	info.mounts = &mount;
 	info.protocols = protocols;
+	info.vhost_name = "localhost";
 	info.ws_ping_pong_interval = 10;
+	info.options =
+		LWS_SERVER_OPTION_HTTP_HEADERS_SECURITY_BEST_PRACTICES_ENFORCE;
 
 	if (lws_cmdline_option(argc, argv, "-s")) {
 		lwsl_user("Server using TLS\n");
-		info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
+		info.options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT;
 		info.ssl_cert_filepath = "localhost-100y.cert";
 		info.ssl_private_key_filepath = "localhost-100y.key";
 	}
+
+	if (lws_cmdline_option(argc, argv, "-h"))
+		info.options |= LWS_SERVER_OPTION_VHOST_UPG_STRICT_HOST_CHECK;
+
+	if (lws_cmdline_option(argc, argv, "-v"))
+		info.retry_and_idle_policy = &retry;
 
 	context = lws_create_context(&info);
 	if (!context) {
@@ -95,7 +109,7 @@ int main(int argc, const char **argv)
 	}
 
 	while (n >= 0 && !interrupted)
-		n = lws_service(context, 1000);
+		n = lws_service(context, 0);
 
 	lws_context_destroy(context);
 

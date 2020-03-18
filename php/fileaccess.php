@@ -12,7 +12,7 @@
 /*
 	File access interface.
 	
-	Originally created for OnlyOffice integration
+	Originally created for OnlyOffice integration - many request are specific to their REST API.
 */
 
 //faLog( 'all data we got ' . print_r( $argv, 1 ) );
@@ -23,7 +23,7 @@ if( $argv[1] )
 
 	if( !isset( $tmp[1] ) ) { friend404(); } // dies...
 	
-	//faLog('complete request: ' .  print_r( $tmp,1  ) );
+	faLog('complete request: ' .  print_r( $tmp,1  ) );
 	
 	ob_clean();
 	switch( strtolower( $tmp[2] ) ) 
@@ -63,9 +63,7 @@ if( $argv[1] )
 	
 }
 
-//faLog( print_r( $argv,1  ) );
-die( '<pre>' . print_r( $argv,1  ) );	
-
+die('500 - unable to process your request');
 
 
 /* TODO: SECURITY HOLE! WE CIRCUMVENT ALL SECURITY HERE */
@@ -74,15 +72,26 @@ die( '<pre>' . print_r( $argv,1  ) );
 */	
 function handleFileCallback( $user, $filepath, $requestjson, $authid = false, $windowid = false )
 {	
+	
+	//faLog('handleFileCallback' .  $user . ' :: ' .  $filepath . ':: ' . print_r( $requestjson, 1) );
+	
 	if( $requestjson == false )
 	{
 		die( '{"error":0}');
 	}
+	
+	if( substr($requestjson, 0, 23) == 'friendrequestparameters' )
+	{
+		$requestjson = file_get_contents( end( explode( '=' , $requestjson ) ) );
+	}
+
 	if( substr($requestjson, 0, 11) == '?post_json=' )
 	{
 		$requestjson = substr( $requestjson, 11 );
 	}
-
+	
+	//faLog('request json is' . $requestjson );
+	
 	try
 	{
 		$json = json_decode($requestjson);
@@ -98,6 +107,12 @@ function handleFileCallback( $user, $filepath, $requestjson, $authid = false, $w
 	{
 		//these statuses give us access to update file contents
 		case '2':
+			/* 
+				status 2 is only called by document server when all active users have closed a file
+				as we warn for unsaved changes and notify once file has been saved, we just will drop the file here and tell document server "everything is fine dave"	
+			*/
+			die( '{"error":0}' );
+			break;
 		case '3':
 		case '6':
 			// Check if this is just a callback on an as of yet not saved file
@@ -105,7 +120,7 @@ function handleFileCallback( $user, $filepath, $requestjson, $authid = false, $w
 			{
 				//we pretend everything is ok to the Document server but send a message to the app to open a save as dialog at the same time - that forces
 				// the user to choose a location which in return will result in a proper save :)
-				faLog('new file... do we have a windowid ? ' . $windowid );
+				//faLog('new file... do we have a windowid ? ' . $windowid );
 				if( $windowid )
 				{
 					tellApplication( 'open_save_as', $user, $windowid, $authid );
@@ -118,6 +133,8 @@ function handleFileCallback( $user, $filepath, $requestjson, $authid = false, $w
 				break;
 			}
 			
+			//faLog( '#saveUserFile will be called ' . $user . ' :: ' . $filepath . ' :: ' . print_r( $json, 1 ) );
+			
 			// Ok, go ahead and save the file
 			saveUserFile( $user, $filepath, $json, $windowid, $authid );
 			break;
@@ -127,13 +144,15 @@ function handleFileCallback( $user, $filepath, $requestjson, $authid = false, $w
 
 function tellApplication( $command, $user, $windowid, $authid )
 {
+
+	faLog( 'tellApplication' . $command . ' :: ' . $user);
+
 	global $SqlDatabase, $Config, $User;
 	
 	if( !$windowid ) return false;
 	if( !$Config ) faConnectDB( $user );
 	
-	
-	$messagestring = '/system.library/admin/servermessage?message=' . rawurlencode( addslashes( '{"msgtype":"applicationmessage","targetapp":"' .  $windowid . '","applicationcommand":"'. $command .'"}' ) );
+	$messagestring = '/system.library/user/servermessage?message=' . rawurlencode( addslashes( '{"msgtype":"applicationmessage","targetapp":"' .  $windowid . '","applicationcommand":"'. $command .'"}' ) );
 
 	$url = ( $Config->SSLEnable ? 'https://' : 'http://' ) .
 		( $Config->FCOnLocalhost ? 'localhost' : $Config->FCHost ) . ':' . $Config->FCPort . $messagestring;
@@ -161,7 +180,6 @@ function getUserFile( $username, $filePath )
 	
 	if( $filePath == 'newpresentation' )
 	{	
-		faLog( 'New file returned.' );
 		$o = new stdClass();
 		$o->content = file_get_contents( 'modules/onlyoffice/data/new.pptx' );
 		$o->type = 'newfile';
@@ -169,7 +187,6 @@ function getUserFile( $username, $filePath )
 	}
 	else if( $filePath == 'newdocument' )
 	{
-		faLog( 'New file returned.' );
 		$o = new stdClass();
 		$o->content = file_get_contents( 'modules/onlyoffice/data/new.docx' );
 		$o->type = 'newfile';
@@ -177,7 +194,6 @@ function getUserFile( $username, $filePath )
 	}
 	else if( $filePath == 'newsheet' )
 	{
-		faLog( 'New file returned.' );
 		$o = new stdClass();
 		$o->content = file_get_contents( 'modules/onlyoffice/data/new.xlsx' );
 		$o->type = 'newfile';
@@ -192,7 +208,7 @@ function getUserFile( $username, $filePath )
 	include_once( 'classes/door.php' );
 
 	
-	$f = new File( $filePath );
+	$f = new File( getOriginalFilePath( $filePath ) );
 	
 	if( $f->Load() )
 	{
@@ -202,6 +218,25 @@ function getUserFile( $username, $filePath )
 	{
 		return false;
 	}
+}
+
+/*
+	check if we have a shadow file... make sure we access the correct one
+	
+	this function must be the same as in the onlyoffice module!
+*/
+function getOriginalFilePath( $inpath )
+{
+	$inpath = urldecode($inpath);
+	//check that we dont write to a hidden version lockfile - correct the path if we do get this...
+	$filename =  strpos($inpath, '/') > 1 ? end( explode('/', $inpath) ) : end( explode(':', $inpath) );
+	if( strpos($filename, '._') == 0 )
+	{
+		//we are trying to write to a temp version copy here.... no no no no
+		$newname = preg_replace('/\._[^_]*_/', '', $filename);
+		return str_replace($filename, $newname, $inpath);
+	}
+	return $inpath;
 }
 
 /*
@@ -312,6 +347,39 @@ function saveUserFile( $username, $filePath, $json, $windowid = false, $authid =
 		curl_close( $c );
 		
 		$file = getUserFile( $username, $filePath );
+		
+		//check that we have a user tha tis still editing the docsument... check the info file.
+		if( $file )
+		{
+			$fileinfo = $file->GetFileInfo();
+			faLog( 'Fileinfo here is ' . $fileinfo );
+			if( $fileinfo )
+			{
+				$infojson = '';
+				try
+				{
+					$infojson = json_decode( $fileinfo );
+				}
+				catch(Exception $e)
+				{
+					die('{"error":1}');
+				}
+				
+				if( $infojson && is_array($infojson->active_lock_user ) )
+				{
+					
+					if( !in_array($username, $infojson->active_lock_user) )
+					{
+						faLog( 'Elvis has left the building. Find a new one ' . $username . ' : ' .  $infojson->active_lock_user[0] );
+						
+						$username = $infojson->active_lock_user[0];
+						faConnectDB( $username );
+
+						$file = getUserFile( $username, $filePath );
+					}
+				}
+			}
+		}
 		
 		if( !$fc )
 		{
@@ -509,7 +577,7 @@ function faConnectDB( $username )
 		}		
 	}	
 	
-	faLog('Config set ' . print_r( $Config,1 ) );
+	//faLog('Config set ' . print_r( $Config,1 ) );
 	
 	if( $configfilesettings && isset( $configfilesettings['DatabaseUser'] ) )
 	{

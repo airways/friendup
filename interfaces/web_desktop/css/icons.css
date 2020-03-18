@@ -11,6 +11,26 @@
 	width: calc(100% - 200px);
 }
 
+.IconWindow .Content
+{
+	will-change: scroll-position, content;
+}
+
+.Scroller
+{
+	scroll-behavior: smooth;
+}
+[mobile] .Scroller
+{
+	overflow-y: scroll;
+	-webkit-overflow-scrolling: touch;
+}
+
+.Content.SlideAnimation
+{
+	pointer-events: none;
+}
+
 .IconWindow .Content > .FileBrowserContainer
 {
 	position: absolute;
@@ -20,6 +40,24 @@
 	height: 100%;
 	padding: $PaddingBox;
 	box-sizing: border-box;
+}
+
+/* Busy busy */
+
+.IconWindow .Content .DirectoryRefresh
+{
+	position: absolute;
+	box-sizing: border-box;
+	background: #444444;
+	border-radius: 5px;
+	padding: 20px;
+	font-size: 1.1em;
+	color: white;
+	width: 300px;
+	height: fit-content;
+	top: 20%;
+	left: calc(50% - 150px);
+	z-index: 2;
 }
 
 /* File browser */
@@ -33,6 +71,27 @@
 .FileBrowser div.Name
 {
 	padding: 5px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.FileBrowserItemImage
+{
+	background-position: center;
+	background-repeat: no-repeat;
+	background-size: contain;
+	width: 16px;
+	height: 16px;
+	float: left;
+	vertical-align: middle;
+	display: block;
+	margin: 1px 4px 0 0;
+}
+
+.Active > .FileBrowserItemImage
+{
+	filter: invert(1);
 }
 
 .FileBrowser div.Name.Active, 
@@ -130,6 +189,22 @@ Just so that we can keep the outputted HTML smaller by using CSS classes :)
 	margin: 20px 0 0 10px;
 	transition: transform,opacity 0.25s;
 	webkit-transition: transform,opacity 0.25s;
+}
+
+.File.Editing a.Title,
+.File.Editing .Column
+{
+	display: none;
+}
+
+.Listview .File.Editing textarea
+{
+	text-align: left;
+	padding: 0 0 0 48px;
+	width: 100%;
+	box-sizing: border-box;
+	height: 28px;
+	line-height: 28px;
 }
 
 .File.Selected
@@ -381,6 +456,25 @@ html .Launcher .File div *
 
 /* File icons --------------------------------------------------------------- */
 
+html .File.Tiny, html .File.Tiny .Icon, html .File.Tiny .Icon > div
+{
+	margin: 0;
+	width: 24px;
+	height: 16px;
+}
+
+.File .Icon .Drive > .Label
+{
+	position: absolute;
+	right: calc(50% - 12px);
+	top: calc(50% - 17px);
+	width: 24px;
+	height: 24px;
+	background-position: center;
+	background-repeat: no-repeat;
+	background-size: 76%;
+}
+
 .File .Icon .File
 {
 }
@@ -448,6 +542,20 @@ html .Launcher .File div *
 .File .Icon .article
 {
 	background-size: contain;
+}
+
+.File .Icon > .Shared:after
+{
+	display: block;
+	font-family: fontawesome;
+	content: '\f064';
+	position: absolute;
+	right: 0;
+	top: 0;
+	background: rgba(255,255,255,0.8);
+	border-radius: 2px;
+	padding: 2px 4px;
+	color: black;
 }
 
 .File .Icon .TypeJPG, .File .Icon .TypeJPEG, .File .Icon .TypePNG, 
@@ -541,5 +649,84 @@ html .Launcher .File div *
 .File .Icon .Application.System_Applications
 {
 	background-size: contain;
+}
+
+/* Compact icons ------------------------------------------------------------ */
+
+html .File.Compact
+{
+	width: 170px;
+}
+
+html .File.Compact > .Title
+{
+	min-height: 35px;
+}
+
+
+html .File.Compact > .Icon
+{
+	height: 35px;
+}
+
+
+/* Zoomed icons ------------------------------------------------------------- */
+
+html .File.ZoomX2
+{
+	width: 140px;
+}
+
+html .File.ZoomX2 > .Title
+{
+	min-height: 32px;
+}
+
+
+html .File.ZoomX2 > .Icon
+{
+	width: 120px;
+	height: 80px;
+}
+
+html .File.ZoomX2 .Icon > div
+{
+	height: 70px;
+}
+
+html .File.ZoomX2 .Icon > .Shared:after
+{
+	top: 4px;
+	border-radius: 50%;
+    padding: 4px 4px;
+}
+
+html .File.ZoomX3
+{
+	width: 240px;
+}
+
+html .File.ZoomX3 > .Title
+{
+	min-height: 32px;
+}
+
+
+html .File.ZoomX3 > .Icon
+{
+	width: 220px;
+	height: 160px;
+}
+
+html .File.ZoomX3 .Icon > div
+{
+	height: 140px;
+}
+
+html .File.ZoomX3 .Icon > .Shared:after
+{
+	top: 8px;
+	right: 24px;
+    padding: 4px 4px;
 }
 

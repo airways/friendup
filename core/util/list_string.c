@@ -47,20 +47,28 @@ ListString *ListStringNew()
 
 void ListStringDelete( ListString *ls )
 {
-	ListString *cur = ls->ls_Next;
-	while( cur != NULL )
+	if( ls != NULL )
 	{
-		ListString *rm = cur;
-		cur = cur->ls_Next;
+		ListString *cur = ls->ls_Next;
+		ListString *rm = NULL;
+		while( cur != NULL )
+		{
+			rm = cur;
+			cur = cur->ls_Next;
 
-		FFree( rm->ls_Data );
-		FFree( rm );
+			if( rm->ls_Data != NULL )
+			{
+				FFree( rm->ls_Data );
+			}
+			FFree( rm );
+		}
+		
+		if( ls->ls_Data != NULL )
+		{
+			FFree( ls->ls_Data );
+		}
+		FFree( ls );
 	}
-	if( ls->ls_Data != NULL )
-	{
-		FFree( ls->ls_Data );
-	}
-	FFree( ls );
 }
 
 //
@@ -70,7 +78,7 @@ void ListStringDelete( ListString *ls )
 FLONG ListStringAdd( ListString *ls, char *data, FLONG size )
 {
 	ListString *nls = FCalloc( 1, sizeof( ListString ) );
-	if( nls != NULL )
+	if( ls != NULL && size > 0 && nls != NULL )
 	{
 		if( ( nls->ls_Data = FCalloc( size + 1, sizeof( char ) ) ) != NULL )
 		{
@@ -101,7 +109,7 @@ FLONG ListStringAdd( ListString *ls, char *data, FLONG size )
 ListString *ListStringJoin( ListString *ls )
 {
 	ls->ls_Data = FCalloc( ls->ls_Size + 1, sizeof(char));
-	if (ls->ls_Data != NULL)
+	if( ls->ls_Data != NULL )
 	{
 		ListString *cur = ls->ls_Next;
 		ListString *rem = cur;

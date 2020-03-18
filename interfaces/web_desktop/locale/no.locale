@@ -52,7 +52,17 @@ i18n_startup_sequence                : Oppstartsekvens
 i18n_cancel                          : Avbryt
 i18n_accept                          : Aksepter
 i18n_understood                      : Forstått
-i18n_your_devices                    : Dine enheter
+i18n_your_devices                    : Disker
+i18n_quit                            : Avslutt
+i18n_menuback                        : <
+i18n_create_folder                   : Lag mappe
+
+i18n_mountlist                       : Disker
+
+i18n_illegal_path                    : Feil filsti
+i18n_illegal_path_desc               : Filstien som ble gitt finnes ikke.
+
+i18n_message_from                    : Melding fra
 
 i18n_full                            : full.
 i18n_disk_icon                       : Diskikon
@@ -66,6 +76,9 @@ i18n_find_workgroup_user             : Finn bruker...
 i18n_no_users_found                  : Ingen brukere funnet...
 i18n_error_in_userlist               : Feil i brukerlisten...
 i18n_apply_sharing_settings          : Sett endringene i kraft
+i18n_disk_visibility                 : Disk synlighet
+i18n_disk_visible                    : Synlig
+i18n_disk_invisible                  : Skjult
 
 i18n_driver_handled                  : DOS driver håndtert
 
@@ -76,6 +89,7 @@ i18n_notification_archive               : Varselsarkiv
 i18n_sure_remove_notification           : Ønsker du virkelig å gjerne varsel?
 i18n_sure_remove_notification_desc      : Dette er arkiverte varsler. Når du fjerner dem, fjernes de også fra minnet.
 i18n_system_message                     : Systemmelding
+i18n_remove_all                         : Fjern alle
 
 #Tools
 i18n_processmgr                         : Prosesser
@@ -106,6 +120,7 @@ i18n_package                            : Pakken
 i18n_was_installed                      : ble installert
 i18n_failed_install_package             : Kunne ikke installere
 i18n_package_failed                     : Denne pakken kunne ikke installeres
+menu_install_package                    : Installer pakke
 
 i18n_Storage_Local_Read_desc            : Lesetilgang, lokale disker
 i18n_Storage_Local_Write_desc           : Skrivetilgang, lokale disker
@@ -126,7 +141,7 @@ i18n_your_command                       : Din kommando
 i18n_door_home                          : Hjem
 
 please_choose_an_icon                   : Vennligst velg et ikon.
-about_friendup                          : Om FriendUP
+about_system                            : Om systemet
 information                             : Info og oppdateringer
 documentation_central                   : Dokumentasjonssentralen
 software_catalog                        : Programvarekatalog
@@ -168,17 +183,28 @@ i18n_cores                              : Kjerner
 i18n_clients                            : Økter
 i18n_printers                           : Printere
 
+i18n_print_failed                       : Utskriften feilet
+i18n_system_administrator_no_printers   : Din systemadministrator har ikke satt opp printere.
+i18n_print                              : Skriv ut
+i18n_print_sent                         : Utskriften ble sendt
+i18n_print_sent_to_printer              : Ditt dokument ble sendt til printeren.
+i18n_print_error                        : Utskriftsfeil
+i18n_print_error_desc                   : En feil oppsto under dokumentforsendelsen.
+
 #Menu
+
+i18n_your_apps                          : Programmer
 
 i18n_favorites                          : Favoritter
 i18n_menu                               : Meny
 
 i18n_close_menu                         : Lukk meny
+i18n_delete_shortcut                    : Fjern snarvei
 
 menu_workspace                          : Workspace
 menu_system                             : System
 menu_new_shell                          : Ny terminal
-menu_about_friendup                     : Om Friend UP
+menu_about                              : Om systemet
 menu_examine_system                     : Utførsk systemet
 menu_refresh_desktop                    : Frisk opp
 menu_add_storage                        : Tilføy disk
@@ -186,7 +212,7 @@ menu_run_command                        : Kjør kommando
 menu_show_launcher                      : Vis Launcher
 menu_hide_launcher                      : Gjem Launcher
 menu_log_out                            : Logg ut
-menu_exit								: Avslutt FriendUP
+menu_exit								: Logg ut
 menu_execute_command                    : Kjør kommando
 menu_upload_file                        : Last opp fil
 menu_snapshot                           : Memoriser
@@ -205,14 +231,24 @@ menu_backdrop                           : Vis oversikt
 menu_buildwebapp                        : Bygg webapplikasjon
 menu_share				: Del
 menu_download                           : Last ned
+i18n_could_not_download                 : Kunne ikke laste ned
+i18n_file_cannot_be_downloaded          : Filen er ikke av rett type for nedlastning
 menu_close_idle_connections             : Fjern nettverksprosesser
 menu_hide_hidden_files                  : Gjem skjulbare filer
 menu_show_hidden_files                  : Vis skjulte filer
 menu_new_window                         : Nytt vindu
 
+menu_help                               : Hjelp
+menu_help_bug                           : Rapporter feil
+menu_help_manual                        : Brukerveiledning
+
 menu_edit_wallpaper                     : Endre skrivebordsbakgrunn
+menu_set_as_wallpaper                   : Bruk som skrivebordsbakgrunn
 i18n_edit_dock                          : Rediger docken
 i18n_remove_from_dock                   : Fjern fra docken
+
+i18n_object_not_supported               : Feil object
+i18n_only_executables_can_drop          : Kun kjørbare objekter kan slippes på docken
 
 i18n_choose_file_to_upload              : Velg en fil for opplasting
 i18n_upload_target                      : Målsti
@@ -224,6 +260,7 @@ i18n_upload_completed                   : Opplasting fullført.
 i18n_upload_failed                      : Opplastning feilet.
 i18n_upload_completed_description       : Din fil ble lastet opp til målmappen.
 i18n_upload_failed_description          : Din fil kunne ikke lastes opp.
+i18n_select_local_files                 : Velg lokale filer
 
 
 i18n_unzip_completed                    : Ferdig å pakke ut.
@@ -256,6 +293,8 @@ menu_show_as_columns                    : Kolonner
 menu_close_window                       : Lukk
 menu_fullscreen                         : Fullskjerm
 
+i18n_swipe_down_to_close                : Skyv ned for å lukke
+
 i18n_create_web_link                    : Create a new web link
 i18n_link                               : Lenke
 i18n_broken_link                        : Ødelagt lenke
@@ -287,6 +326,8 @@ menu_manage_disks                       : Rediger disker
 menu_workspheres                        : Work Spheres
 i18n_worksphere_all                     : All Work Spheres
 i18n_worksphere_add                     : Add Work Sphere
+
+i18n_untitled_window                    : Vindu uten navn
 
 #Applications ------------------------------------------------------------------
 install_question_mintitle               : Installer program
@@ -350,10 +391,10 @@ i18n_open_with                          : Åpne med
 
 #File dialogs ------------------------------------------------------------------
 
-file_load                               : Last inn
+file_load                               : Åpne
 file_abort                              : Lukk
 file_save                               : Lagre
-file_open_title                         : Last inn en fil
+file_open_title                         : Åpne fil
 file_open_path                          : Velg sti
 file_save_title                         : Lagre en fil
 file_unknown_title                      : Ukjent filoperasjon
@@ -372,11 +413,17 @@ rename_file                             : Endre filnavn
 new_name                                : Nytt navn
 i18n_read_only_filesystem               : Kan ikke skrive til filsystemet
 i18n_read_only_fs_desc                  : Filsystemet du prøver å skrive til er skrivebeskyttet eller støtter ikke skriving.
+i18n_overwriting_file                   : Overskriver eksisterende fil
+i18n_do_you_want_overwrite              : Ønsker du virkelig å overskrive den eksisterende filen?
+i18n_overwrite                          : Overskriv filen
+i18n_no_path                            : Ingen sti valgt
+i18n_please_choose_a_path               : Vennligst velg en sti.
 
 #File operations ---------------------------------------------------------------
 
 i18n_cancel                             : Avbryt
 i18n_moving_files                       : Flytt filer
+i18n_delete_error                       : Feil ved sletting
 i18n_copying_files                      : Kopier filer
 i18n_filecopy_error                     : Feil ved filkopiering
 i18n_do_you_want_copy                   : Vil du virkelig kopiere disse filene?
@@ -397,6 +444,23 @@ i18n_could_not_make_dir                 : Kunne ikke opprette mappen.
 i18n_volume_information                 : Enhetsinformasjon
 i18n_volume_permissions                 : Enhetsrettigheter
 i18n_drag_to_download_file              : Clikk eller dra og slipp på din desktop.
+i18n_drag_files_to_download             : Slipp filer for nedlastning.
+
+i18n_creating_directory                 : Lager mappe
+i18n_building_file_index                : Lager filindex...
+i18n_counted                            : Har telt
+i18n_counted_files                      : filer.
+i18n_cleaning_up                        : Rydder...
+
+i18n_could_not_download                 : Kunne ikke laste ned
+i18n_download_wrong_type                : Kun filer kan lastes ned.
+
+i18n_illegal_path                       : Feil sti
+i18n_illegal_path_desc                  : Stien finnes ikke.
+
+#Colorpicker -------------------------------------------------------------------
+
+i18n_color_picker                       : Fargevelger
 
 #Misc --------------------------------------------------------------------------
 
@@ -405,6 +469,7 @@ Running tasks : Kjørende prosesser
 i18n_read_only                          : Kun lese
 i18n_task_running                       : oppgave kjører
 i18n_tasks_running                      : oppgaver kjører
+i18n_manage_tasks                       : Oppgavedetaljer
 i18n_visible                            : Visible
 i18n_network_activity                   : Network activity
 i18n_today                              : I dag
@@ -439,6 +504,10 @@ i18n_mark_as_read                       : Merk som lest
 i18n_messages_sent                      : Meldingene ble sendt...
 i18n_notifications_sent                 : Varslene ble sendt...
 
+i18n_pasted_file                        : Limer inn innhold
+i18n_pasted_to_downloads                : Ditt innhold ble limt inn i Downloads
+i18n_uploaded                           : Fil(ene) er lastet opp.
+
 #Locale ------------------------------------------------------------------------
 
 i18n_locale_no                          : Norsk
@@ -459,6 +528,8 @@ i18n_search_stop                        : Stopp søk
 i18n_search_type_Door                   : enhet
 i18n_search_type_Directory              : mappe
 i18n_search_type_File                   : fil
+i18n_search_in                          : i
+i18n_search_all_disks                   : Søk i alt
 
 #Directory view ----------------------------------------------------------------
 
@@ -492,8 +563,10 @@ i18n_cal_evt_title                      : Hendelse tittel
 i18n_cal_evt_title_what                 : Din tittel
 i18n_cal_evt_time_to                    : Tid til
 i18n_cal_evt_time_from                  : Tid fra
+i18n_cal_evt_addday                     : Hele dagen
 i18n_cal_evt_description                : Beskriv hendelsen
 i18n_cal_btn_add                        : Lagre hendelse
+i18n_cal_btn_edit                       : Lagre hendelse
 i18n_from                               : Fra
 i18n_to                                 : Til
 
@@ -531,9 +604,12 @@ i18n_day_sat                            : lør
 i18n_day_sun                            : søn
 
 i18n_server_disconnected                : Frakoblet
-i18n_ws_disconnected                    : Redusert nettverk
+i18n_ws_disconnected                    : Nettverk frakoblet
 i18n_copy_to_system_clipboard           : Vil du overføre din Friend utklippstavle til systemet ditt?
 i18n_copy_to_system_clipboard_headline  : Overfør utklippstavle til systemet
+
+i18n_directory_too_long                 : Mappen har tatt for lang tid å laste inn. Er du offline?
+i18n_refresh_when_online                : Frisk opp når du er online
 
 #File types --------------------------------------------------------------------
 
@@ -614,3 +690,26 @@ menu_move_view_to_workspace_10          : Flytt til arbeidsbord 10
 
 i18n_minimize_all_windows               : Gjem alle vinduer
 i18n_show_all_windows                   : Vis alle vinduer
+
+i18n_could_not_find_application         : Kunne ikke finne programmet
+i18n_could_not_find_app_desc            : Beskjeden kunne ikke sendes til programmet fordi det ikke startet.
+
+i18n_camera_action_description          : Ta et bilde med ditt kamera.
+i18n_take_photo                         : Ta bildet
+i18n_camera                             : Kamera
+
+#Startup -----------------------------------------------------------------------
+
+i18n_debug_skip                         : Hopp over
+i18n_starting_your_session              : Starter din økt
+i18n_status_Ok                          : OK
+i18n_status_Pending                     : Jobber
+i18n_status_Error                       : FEILET
+i18n_processing                         : Prosesserer
+i18n_logging_in                         : Logger inn
+
+#Alerts ------------------------------------------------------------------------
+
+i18n_erroneous_filename                 : Feil filnavn
+i18n_please_set_a_valid_filename        : Vennligst velg et filnavn med riktig filendelse.
+

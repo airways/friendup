@@ -9,8 +9,51 @@
 *                                                                              *
 *****************************************************************************©*/
 
-$userid = $level == 'Admin' && isset( $args->args->userid ) ? 
-	$args->args->userid : $User->ID;
+if( isset( $args->args->authid ) && !isset( $args->authid ) )
+{
+	$args->authid = $args->args->authid;
+}
+
+if( !isset( $args->authid ) )
+{
+	$userid = ( $level == 'Admin' && isset( $args->args->userid ) ? $args->args->userid : $User->ID );
+}
+else
+{
+	require_once( 'php/include/permissions.php' );
+	
+	$userid = ( !isset( $args->args->userid ) ? $User->ID : 0 );
+	
+	if( $perm = Permissions( 'read', 'application', ( 'AUTHID'.$args->authid ), [ 'PERM_APPLICATION_GLOBAL', 'PERM_APPLICATION_WORKGROUP' ] ) )
+	{
+		if( is_object( $perm ) )
+		{
+			// Permission denied.
+		
+			if( $perm->response == -1 )
+			{
+				//
+			
+				die( 'fail<!--separate-->{"message":"'.$perm->message.'",'.($perm->reason?'"reason":"'.$perm->reason.'",':'').'"response":'.$perm->response.'}' );
+			}
+		
+			// Permission granted. GLOBAL or WORKGROUP specific ...
+		
+			if( $perm->response == 1 && isset( $perm->data->users ) && isset( $args->args->userid ) )
+			{
+			
+				// If user has GLOBAL or WORKGROUP access to this user
+			
+				if( $perm->data->users == '*' || strstr( ','.$perm->data->users.',', ','.$args->args->userid.',' ) )
+				{
+					$userid = intval( $args->args->userid );
+				}
+			
+			}
+		}
+	}
+}
+
 
 if( $rows = $SqlDatabase->FetchObjects( '
 	SELECT
@@ -45,7 +88,8 @@ if( $rows = $SqlDatabase->FetchObjects( '
 			// For repositories
 			if( $path == 'repository/' )
 			{
-				if( file_exists( $path . $file . '/Signature.sig' ) )
+				// TODO: implement dir listing with $file
+				/*if( file_exists( $path . $file . '/Signature.sig' ) )
 				{
 					if( !( $d = file_get_contents( 'repository/' . $file . '/Signature.sig' ) ) )
 						continue;
@@ -53,7 +97,7 @@ if( $rows = $SqlDatabase->FetchObjects( '
 						continue;
 					if( !isset( $js->validated ) )
 						continue;
-				}
+				}*/
 			}
 			if( file_exists( $path . '/' . $v->Name . '/preview.png' ) )
 			{
@@ -69,7 +113,7 @@ if( $rows = $SqlDatabase->FetchObjects( '
 	}
 	die( 'ok<!--separate-->' . json_encode( $rows ) );
 }
-die( 'fail' );
+die( 'fail<!--separate-->{"response":"fatal error in listuserapplications"}' );
 
 
 ?>

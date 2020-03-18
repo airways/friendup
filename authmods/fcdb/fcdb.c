@@ -139,9 +139,11 @@ FBOOL CheckPassword( struct AuthMod *l, Http *r __attribute__((unused)), User *u
 	// checking if last user login attempts failed, if yes, then we cannot continue
 	//
 	*blockTime = 0;
+	DEBUG("SystemBase\n");
 	
 	SystemBase *sb = (SystemBase *)l->sb;
 	{
+		DEBUG("SystemBase ptr %p\n", sb );
 		time_t tm = 0;
 		time_t tm_now = time( NULL );
 		FBOOL access = sb->sl_UserManagerInterface.UMGetLoginPossibilityLastLogins( sb->sl_UM, usr->u_Name, l->am_BlockAccountAttempts, &tm );
@@ -583,7 +585,7 @@ UserSession *Authenticate( struct AuthMod *l, Http *r, struct UserSession *logse
 				else		// user session is no longer active
 				{
 					//Generate new session ID for the user
-					char *new_session_id = session_id_generate();
+					char *new_session_id = SessionIDGenerate();
 					DEBUG("[FCDB] New sessionid <%s>\n", new_session_id);
 				
 					// Remove old session ID and update
@@ -613,9 +615,9 @@ UserSession *Authenticate( struct AuthMod *l, Http *r, struct UserSession *logse
 					// Generate sessionid
 					if( uses->us_SessionID == NULL || !strlen( uses->us_SessionID ) )
 					{
-						DEBUG("\n\n\n============================================================\n \
-											user name %s current timestamp %ld login time %ld logout time %lu\n\
-											============================================================\n", tmpusr->u_Name, timestamp, uses->us_LoggedTime , sb->sl_RemoveSessionsAfterTime);
+						DEBUG("============================================================\n \
+							user name %s current timestamp %ld login time %ld logout time %lu\n\
+								============================================================\n", tmpusr->u_Name, timestamp, uses->us_LoggedTime , sb->sl_RemoveSessionsAfterTime);
 						
 						char *hashBase = MakeString( 255 );
 						sprintf( hashBase, "%ld%s%d", timestamp, tmpusr->u_FullName, ( rand() % 999 ) + ( rand() % 999 ) + ( rand() % 999 ) );
@@ -669,19 +671,22 @@ loginfail:
 void Logout( struct AuthMod *l, Http *r __attribute__((unused)), char *name )
 {
 	SystemBase *sb = (SystemBase *)l->sb;
-	UserSession *users = sb->sl_UserSessionManagerInterface.USMGetSessionBySessionID( sb->sl_USM, name );
+	//UserSession *users = sb->sl_UserSessionManagerInterface.USMGetSessionBySessionID( sb->sl_USM, name );
 	
+	DEBUG("Logout get\n");
 	SQLLibrary *sqlLib = sb->LibrarySQLGet( sb );
 	if( sqlLib != NULL )
 	{
 		char tmpQuery[ 1024 ];
 		
 		sqlLib->SNPrintF( sqlLib, tmpQuery, sizeof(tmpQuery), "DELETE FROM FUserSession WHERE SessionID = '%s'", name );
+		DEBUG("Logout sql: %s\n", tmpQuery );
 		
 		sqlLib->QueryWithoutResults(  sqlLib, tmpQuery );
 	
 		sb->LibrarySQLDrop( sb, sqlLib );
 	}
+	DEBUG("Logout get end\n");
 }
 
 /**

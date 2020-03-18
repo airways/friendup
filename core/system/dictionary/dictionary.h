@@ -60,15 +60,13 @@ typedef struct Dictionary
 }Dictionary;
 
 //
-// Category numbers
+// Dictionary category
 //
-
-enum Category{
-	APP_PERM =0,
-	APP_CATEGORY = 1,
-	ERROR_STRING =2
+	
+enum {
+	DICT_CATEGORY_GLOBAL = 0,
+	DICT_CATEGORY_USER_STATUS
 };
-
 
 static FULONG DictionaryDesc[] = { SQLT_TABNAME, (FULONG)"FDictionary", SQLT_STRUCTSIZE, sizeof( struct DictEntry ),
 	SQLT_IDINT, (FULONG)"ID", offsetof( DictEntry, de_ID ),
@@ -78,7 +76,7 @@ static FULONG DictionaryDesc[] = { SQLT_TABNAME, (FULONG)"FDictionary", SQLT_STR
 	SQLT_STR, (FULONG)"Language", offsetof( DictEntry, de_Lang ),
 	SQLT_NODE, (FULONG)"node", offsetof( struct DictEntry, node ),
 	SQLT_END };
-
+	
 //
 // Dictionary
 //
@@ -153,6 +151,9 @@ enum {
 	DICT_NO_MEMORY_FOR_DOSTOKEN,
 	DICT_CANNOT_ADD_DOSTOKEN,
 	DICT_CANNOT_REMOVE_DOSTOKEN,
+	DICT_USER_GROUP_ALREADY_EXIST,
+	DICT_BAD_CHARS_USED,
+	DICT_NO_PERMISSION,
 	DICT_MAX
 };
 /*
@@ -239,6 +240,20 @@ INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) 
 INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '0', 'Cannot allocate memory for DOSToken', 'ENG', '65');
 INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '0', 'Cannot add token to list', 'ENG', '66');
 INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '0', 'Cannot remove token from list', 'ENG', '67');
+
+INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '0', 'User Group already exist', 'ENG', '68');
+
+INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '0', 'Bad chars used', 'ENG', '69');
+
+INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '0', 'No access, special rights required', 'ENG', '70');
+*/
+
+// User status
+
+/*
+INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '1', 'Active', 'ENG', '0');
+INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '1', 'Disabled', 'ENG', '1');
+INSERT INTO `FDictionary` (`ID`, `CategoryID`, `Message`, `Language`, `DictID`) VALUES (NULL, '1', 'Blocked', 'ENG', '2');
 */
 
 // Load dictionary from DB

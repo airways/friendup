@@ -1,24 +1,25 @@
 /*
  * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2010-2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
- *
- * included from libwebsockets.h
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 /*! \defgroup usercb User Callback
@@ -310,6 +311,20 @@ enum lws_callback_reasons {
 	 * It indicates the connection completed its transaction and may
 	 * do something different now.  Any protocol allocation related
 	 * to the http transaction processing should be destroyed. */
+
+	LWS_CALLBACK_HTTP_CONFIRM_UPGRADE			= 86,
+	/**< This is your chance to reject an HTTP upgrade action.  The
+	 * name of the protocol being upgraded to is in 'in', and the ah
+	 * is still bound to the wsi, so you can look at the headers.
+	 *
+	 * The default of returning 0 (ie, also if not handled) means the
+	 * upgrade may proceed.  Return <0 to just hang up the connection,
+	 * or >0 if you have rejected the connection by returning http headers
+	 * and response code yourself.
+	 *
+	 * There is no need for you to call transaction_completed() as the
+	 * caller will take care of it when it sees you returned >0.
+	 */
 
 	/* ---------------------------------------------------------------------
 	 * ----- Callbacks related to HTTP Client  -----
@@ -669,6 +684,42 @@ enum lws_callback_reasons {
 	 */
 
 	/* ---------------------------------------------------------------------
+	 * ----- Callbacks related to RAW PROXY -----
+	 */
+
+	LWS_CALLBACK_RAW_PROXY_CLI_RX				= 89,
+	/**< RAW mode client (outgoing) RX */
+
+	LWS_CALLBACK_RAW_PROXY_SRV_RX				= 90,
+	/**< RAW mode server (listening) RX */
+
+	LWS_CALLBACK_RAW_PROXY_CLI_CLOSE			= 91,
+	/**< RAW mode client (outgoing) is closing */
+
+	LWS_CALLBACK_RAW_PROXY_SRV_CLOSE			= 92,
+	/**< RAW mode server (listening) is closing */
+
+	LWS_CALLBACK_RAW_PROXY_CLI_WRITEABLE			= 93,
+	/**< RAW mode client (outgoing) may be written */
+
+	LWS_CALLBACK_RAW_PROXY_SRV_WRITEABLE			= 94,
+	/**< RAW mode server (listening) may be written */
+
+	LWS_CALLBACK_RAW_PROXY_CLI_ADOPT			= 95,
+	/**< RAW mode client (onward) accepted socket was adopted
+	 *   (equivalent to 'wsi created') */
+
+	LWS_CALLBACK_RAW_PROXY_SRV_ADOPT			= 96,
+	/**< RAW mode server (listening) accepted socket was adopted
+	 *   (equivalent to 'wsi created') */
+
+	LWS_CALLBACK_RAW_PROXY_CLI_BIND_PROTOCOL		= 97,
+	LWS_CALLBACK_RAW_PROXY_SRV_BIND_PROTOCOL		= 98,
+	LWS_CALLBACK_RAW_PROXY_CLI_DROP_PROTOCOL		= 99,
+	LWS_CALLBACK_RAW_PROXY_SRV_DROP_PROTOCOL		= 100,
+
+
+	/* ---------------------------------------------------------------------
 	 * ----- Callbacks related to RAW sockets -----
 	 */
 
@@ -683,6 +734,9 @@ enum lws_callback_reasons {
 
 	LWS_CALLBACK_RAW_ADOPT					= 62,
 	/**< RAW mode connection was adopted (equivalent to 'wsi created') */
+
+	LWS_CALLBACK_RAW_CONNECTED				= 101,
+	/**< outgoing client RAW mode connection was connected */
 
 	LWS_CALLBACK_RAW_SKT_BIND_PROTOCOL			= 81,
 	LWS_CALLBACK_RAW_SKT_DROP_PROTOCOL			= 82,

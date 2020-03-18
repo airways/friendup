@@ -1,7 +1,7 @@
 /*
  * Example embedded sshd server using libwebsockets sshd plugin
  *
- * Copyright (C) 2017 Andy Green <andy@warmcat.com>
+ * Written in 2010-2019 by Andy Green <andy@warmcat.com>
  *
  * This file is made available under the Creative Commons CC0 1.0
  * Universal Public Domain Dedication.
@@ -202,7 +202,7 @@ ssh_ops_rx(void *_priv, struct lws *wsi, const uint8_t *buf, uint32_t len)
 	fd = lws_get_socket_fd(wsi_stdin);
 
 	if (*buf != 0x0d) {
-		if (write(fd, buf, len) != len)
+		if (write(fd, buf, len) != (int)len)
 			return -1;
 		if (priv->pty_in_echo) {
 			if (!lws_ring_insert(priv->ring_stdout, buf, 1))
@@ -342,7 +342,7 @@ ssh_ops_is_pubkey_authorized(const char *username, const char *type,
 	 * <len32>E<len32>N that the peer sends us
 	 */
 
-	if (memcmp(peer, ps, peer_len)) {
+	if (lws_timingsafe_bcmp(peer, ps, peer_len)) {
 		lwsl_info("factors mismatch\n");
 		goto bail;
 	}
@@ -690,7 +690,7 @@ int main()
 
 	n = 0;
 	while (!n  && !force_exit)
-		n = lws_service(context, 500);
+		n = lws_service(context, 0);
 
 	ret = 0;
 

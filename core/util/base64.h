@@ -22,6 +22,18 @@
 //
 //
 
+void build_decoding_table();
+
+//
+//
+//
+
+void base64_cleanup();
+
+//
+//
+//
+
 char* Base64Encode( const unsigned char* data, int length, int *dstlen );
 
 //
@@ -40,6 +52,6 @@ char *MarkAndBase64EncodeString( const char *chr );
 //
 //
 
-char* Base64Decode( const unsigned char* data, int length, int *finalLength );
+char* Base64Decode( const unsigned char* data, unsigned int length, int *finalLength );
 
 #endif

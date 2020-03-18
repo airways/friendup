@@ -42,6 +42,20 @@ var Module = function( mod )
 		if( args ) this.args = args;
 		
 		var j = new cAjax ();
+		if( this.cancelId )
+			j.cancelId = this.cancelId;
+		if( this.onQueue )
+			j.onQueue = this.onQueue;
+		
+		// Force http!
+		if( this.forceHTTP )
+		{
+			j.forceHTTP = true;
+		}
+		if( this.forceSend )
+		{
+			j.forceSend = true;
+		}
 		
 		j.open( 'post', '/system.library/module/', true, true );
 		
@@ -64,12 +78,6 @@ var Module = function( mod )
 		j.addVar( 'command',   this.command                 );
 		
 		for( var a in this.vars ) j.addVar( a, this.vars[a] );
-			
-		// Force http!
-		if( this.forceHTTP )
-			j.forceHTTP = true;
-		if( this.forceSend )
-			j.forceSend = true;
 		
 		if( this.onExecuted )
 		{

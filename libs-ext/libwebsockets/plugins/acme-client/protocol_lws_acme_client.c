@@ -1,23 +1,25 @@
 /*
  * libwebsockets ACME client protocol plugin
  *
- * Copyright (C) 2017 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
- *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  *
  *  Acme is in a big messy transition at the moment from a homebrewed api
  *  to an IETF one.  The old repo for the homebrew api (they currently
@@ -435,14 +437,15 @@ lws_acme_load_create_auth_keys(struct per_vhost_data__lws_acme_client *vhd,
 {
 	int n;
 
-	if (!lws_jwk_load(&vhd->jwk, vhd->pvop[LWS_TLS_SET_AUTH_PATH]))
+	if (!lws_jwk_load(&vhd->jwk, vhd->pvop[LWS_TLS_SET_AUTH_PATH],
+			  NULL, NULL))
 		return 0;
 
-	strcpy(vhd->jwk.keytype, "RSA");
+	vhd->jwk.kty = LWS_GENCRYPTO_KTY_RSA;
 	lwsl_notice("Generating ACME %d-bit keypair... "
 		    "will take a little while\n", bits);
-	n = lws_genrsa_new_keypair(vhd->context, &vhd->rsactx, &vhd->jwk.el,
-				   bits);
+	n = lws_genrsa_new_keypair(vhd->context, &vhd->rsactx, LGRSAM_PKCS1_1_5,
+				   vhd->jwk.e, bits);
 	if (n) {
 		lwsl_notice("failed to create keypair\n");
 
@@ -546,17 +549,20 @@ callback_acme_client(struct lws *wsi, enum lws_callback_reasons reason,
 					lws_get_protocol(wsi));
 	char buf[LWS_PRE + 2536], *start = buf + LWS_PRE, *p = start,
 	     *end = buf + sizeof(buf) - 1, digest[32], *failreason = NULL;
-	unsigned char **pp, *pend;
-	const char *content_type;
 	const struct lws_protocol_vhost_options *pvo;
 	struct lws_acme_cert_aging_args *caa;
 	struct acme_connection *ac = NULL;
 	struct lws_genhash_ctx hctx;
+	unsigned char **pp, *pend;
+	const char *content_type;
+	struct lws_jwe jwe;
 	struct lws *cwsi;
 	int n, m;
 
 	if (vhd)
 		ac = vhd->ac;
+
+	lws_jwe_init(&jwe, lws_get_context(wsi));
 
 	switch ((int)reason) {
 	case LWS_CALLBACK_PROTOCOL_INIT:
@@ -781,15 +787,22 @@ callback_acme_client(struct lws *wsi, enum lws_callback_reasons reason,
 
 			puts(start);
 pkt_add_hdrs:
-			ac->len = lws_jws_create_packet(&vhd->jwk,
+			if (lws_gencrypto_jwe_alg_to_definition("RSA1_5", &jwe.jose.alg)) {
+				ac->len = 0;
+				lwsl_notice("%s: no RSA1_5\n", __func__);
+				goto failed;
+			}
+			jwe.jws.jwk = &vhd->jwk;
+			ac->len = lws_jwe_create_packet(&jwe,
 							start, p - start,
 							ac->replay_nonce,
 							&ac->buf[LWS_PRE],
 							sizeof(ac->buf) -
-								 LWS_PRE);
+								 LWS_PRE,
+							lws_get_context(wsi));
 			if (ac->len < 0) {
 				ac->len = 0;
-				lwsl_notice("lws_jws_create_packet failed\n");
+				lwsl_notice("lws_jwe_create_packet failed\n");
 				goto failed;
 			}
 

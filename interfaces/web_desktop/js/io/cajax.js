@@ -13,40 +13,38 @@ var _cajax_process_count = 0;
 var _cajax_connection_seed = Math.random(0,999)+Math.random(0,999)+Math.random(0,999) + '_';
 var _cajax_connection_num = 0;
 
-var _cajax_queue = [];
-var _cajax_file_queue = [];
-var _cajax_send_interval = null;
-var _cajax_queue_length = 10;
-var _cajax_file_process_count = 0;
+var _cajax_http_connections = 0;                // How many?
+var _cajax_http_max_connections = 6;            // Max
+var _cajax_http_last_time = 0;                  // Time since last
+var _cajax_mutex = 0;
 
 // For debug
 var _c_count = 0;
 var _c_destroyed = 0;
 
-// Kill all ajax calls by context
-// TODO: Test if it is dangerous!
-function KillcAjaxByContext( context )
-{
-	var q = [];
-	for( var a = 0; a < _cajax_queue; a++ )
-	{
-		if( _cajax_queue[ a ].context == context )
-		{
-			_cajax_queue[ a ].destroy();
-		}
-		else q.push( _cajax_queue[ a ] );
-	}
-	_cajax_queue = q;
-}
+if( !window.Friend ) window.Friend = {};
+if( !Friend.cajax ) Friend.cajax = [];
 
 function AddToCajaxQueue( ele )
 {
+	// If we're queueing it
+	if( ele.onQueue ) ele.onQueue();
+	
+	// Queued objects get eternal life
+	if( ele.life )
+	{
+		clearTimeout( ele.life );
+		ele.life = null;
+	}
+	
+	ele.queued = true;
+	
 	// Don't add to queue if we are offline
 	if( !Workspace.serverIsThere || Workspace.workspaceIsDisconnected )
 	{
 		if( ele.onload )
 		{
-			ele.onload( false );
+			ele.onload( null, null );
 		}
 		return ele.destroy();
 	}
@@ -54,52 +52,88 @@ function AddToCajaxQueue( ele )
 	// TODO: Support a nice queue.. :-)
 	if( !window.Friend || !window.Friend.cajax )
 	{
-		console.log( 'Impossible error' );
 		return false;
 	}
+	// Duplicate check
 	for( var a = 0; a < Friend.cajax.length; a++ )
 	{
-		// Already there
-		if( Friend.cajax[a] == ele ) return false;
+		if( Friend.cajax[a] == ele )
+		{
+			return false;
+		}
 	}
-	Friend.cajax.push( ele );
+	// Add ajax element to the top of the queue
+	var o = [ ele ];
+	for( var a = 0; a < Friend.cajax.length; a++ )
+		o.push( Friend.cajax[ a ] );
+	Friend.cajax = o;
+}
+
+function RemoveFromCajaxQueue( ele )
+{
+	var o = [];
+	var executeLength = 6;
+	var executors = [];
+	for( var a = 0; a < Friend.cajax.length; a++ )
+	{
+		if( Friend.cajax[a] != ele )
+		{
+			if( executeLength > 0 )
+			{
+				executors.push( Friend.cajax[a] );
+				executeLength--;
+			}
+			else
+			{
+				o.push( Friend.cajax[a] );
+			}
+		}
+	}
+	Friend.cajax = o;
+	for( var a = 0; a < executors.length; a++ )
+	{
+		executors[ a ].send( null );
+	}
+}
+
+// Cancel all queued cajax calls on id
+function CancelCajaxOnId( id )
+{
+	var o = [];
+	for( var a = 0; a < Friend.cajax.length; a++ )
+	{
+		if( Friend.cajax[ a ].cancelId != id )
+			o.push( Friend.cajax[ a ] );
+		else 
+		{
+			// Tell it it failed
+			Friend.cajax[ a ].destroy();
+		}
+	}
+	Friend.cajax = o;
 }
 
 // A simple ajax function
+// Can have a cancellable series
 cAjax = function()
 {
+	var self = this;
+	
+	_cajax_process_count++;
+	
+	// cajax only survives for so long..
+	self.life = setTimeout( function()
+	{
+		self.destroy();
+	}, 5000 );
+	
+	// Vars to mark success / process count
+	this.decreasedProcessCount = false;
+	
+	// Other
 	this.openFunc = null;
 	this.opened = false;
 	this.context = false; // Named contexts, so that we can kill an entire context
-	
-	//_c_count++;
-	//console.log( 'cAjax: Created ' + _c_count );
-
-	// Make sure to track object in case of renewal...
-	if( typeof( Friend ) != 'undefined' )
-	{
-		if( !Friend.cajax ) Friend.cajax = [];
-	}
-	
-	// Get deepest field
-	this.df = typeof( DeepestField ) != 'undefined' ? DeepestField : false;
-	if( !this.df )
-	{
-		try
-		{
-			this.df = typeof( parent.DeepestField ) != 'undefined' ? parent.DeepestField : false;
-		}
-		catch( e )
-		{};
-	}
-	if( this.df )
-	{
-		// Create a unique id
-		_cajax_connection_num++;
-		if( _cajax_connection_num > 1073741824 )
-			_cajax_connection_num = 0;
-		this.connectionId = _cajax_connection_seed + _cajax_connection_num;
-	}
 	
 	this.setResponseType = function( type )
 	{
@@ -184,16 +218,20 @@ cAjax = function()
 						var t = JSON.parse( jax.rawData );
 						// Deprecate from 1.0 beta 2 "no user!"
 						var res = t ? t.response.toLowerCase() : '';
-						if( t && ( res == 'user not found' || res == 'user session not found' ) )
+						if( t && ( res == 'user not found' || res.toLowerCase() == 'user session not found' ) )
 						{
-							if( Workspace )
+							if( window.Workspace && res.toLowerCase() == 'user session not found' ) 
+								Workspace.flushSession();
+							if( window.Workspace )
 							{
 								// Drop these (don't retry!) because of remote fs disconnect
 								if( jax.url.indexOf( 'file/info' ) > 0 )
-									return;
+								{
+									return jax.destroy();
+								}
+								
 								// Add to queue
 								AddToCajaxQueue( jax );
-								Workspace.flushSession();
 								return Workspace.relogin();
 							}
 						}
@@ -202,11 +240,9 @@ cAjax = function()
 					{
 						if( !jax.rawData )
 						{
-							if( Workspace )
-							{
-								AddToCajaxQueue( jax );
-								return Workspace.relogin();
-							}
+							//console.log( '[cAjax] Can not understand server response: ', jax.rawData );
+							jax.destroy();
+							return;
 						}
 					}
 				}
@@ -216,12 +252,20 @@ cAjax = function()
 					try
 					{
 						var r = JSON.parse( jax.returnData );
+						
 						var res = r ? r.response.toLowerCase() : '';
-						if( res == 'user session not found' )
+						
+						if( res == 'user not found' || res.toLowerCase() == 'user session not found' )
 						{
-							AddToCajaxQueue( jax );
-							Workspace.flushSession();
-							return Workspace.relogin();
+							if( window.Workspace && res.toLowerCase() == 'user session not found' ) 
+								Workspace.flushSession();
+							
+							if( window.Workspace && Workspace.postInitialized && Workspace.sessionId )
+							{
+								// Add to queue
+								AddToCajaxQueue( jax );
+								return Workspace.relogin();
+							}
 						}
 					}
 					catch( e )
@@ -243,23 +287,15 @@ cAjax = function()
 				}
 			}
 			
-			// Clean out possible queue
-			var o = [];
-			for( var a = 0; a < Friend.cajax.length; a++ )
+			// Clean up
+			if( jax.mode != 'websocket' )
 			{
-				if( Friend.cajax[a] != jax )
-					o.push( Friend.cajax[a] );
+				if( !jax.forceSend )
+					_cajax_http_connections--;
+				//console.log( '[cajax] We now are running ' + _cajax_http_connections + '/' + _cajax_http_max_connections + ' connections. (closed one)', Friend.cajax );
 			}
-			Friend.cajax = o;
-			// End clean queue
 			
-			// Register send time
-			if( jax.sendTime && jax.df && jax.df.available )
-			{
-				var ttr = ( new Date() ).getTime() - jax.sendTime;
-				jax.sendTime = false;
-				jax.df.networkActivity.timeToFinish.push( ttr );
-			}
+			// End clean queue
 
 			// Execute onload action with appropriate data
 			if( jax.onload )
@@ -270,19 +306,12 @@ cAjax = function()
 		}
 		// Something went wrong!
 		else if( this.readyState == 4 && ( this.status == 500 || this.status == 0 || this.status == 404 ) )
-		{	
-			// Clean out possible queue
-			var o = [];
-			for( var a = 0; a < Friend.cajax.length; a++ )
-			{
-				if( Friend.cajax[a] != jax )
-					o.push( Friend.cajax[a] );
-			}
-			Friend.cajax = o;
-			// End clean queue
-
+		{
 			// tell our caller...
-			if( jax.onload ) jax.onload( 'fail', false );
+			if( jax.onload ) 
+			{
+				jax.onload( 'fail', false );
+			}
 			jax.destroy();
 		}
 		else
@@ -293,45 +322,62 @@ cAjax = function()
 }
 
 // Clean up object
-cAjax.prototype.destroy = function()
+// Never use this one outside the destroy() function!!!
+cAjax.prototype.destroySilent = function()
 {
-	//_c_destroyed++;
-	//console.log( 'cAjax: ' + _c_count + ' created and ' + _c_destroyed + ' destroyed' );
-
-	// No more activity here!
-	this.decreaseProcessCount();
-	if( this.opened )
-		this.close();
-	if( this.df && this.df.available ) this.df.delConnection( this.connectionId );
+	var self = this;
 	
-	// Null all attributes
-	if( this.dfTimeout ) clearTimeout( this.dfTimeout );
-	this.dfTimeout = null;
-	this.df = null;
-	this.vars = null;
-	this.mode = null;
-	this.url = null;
-	this.hasReturnCode = null;
-	this.lastOptions = null;
-	this.proxy = null;
-	if( this.worker )
-		this.worker.terminate();
-	this.worker = null;
-	this.rawData = null;
-	this.varcount = null;
-	this.wsRequestID = null;
-	this.wsData = null;
-	this.connectionId = null;
-	this.sendTime = null;
-	this.hasReturnCode = null;
-	this.method = null;
-	this.onload = null;
-	this.queued = null;
-	this.openFunc = null;
-	this.fileQueue = null;
+	// No more activity here!
+	self.decreaseProcessCount();
+	
+	if( self.opened )
+		self.close();
+
+	if( self.life ) clearTimeout( self.life );
+	self.life = null;
+
+	self.vars = null;
+	self.mode = null;
+	self.url = null;
+	self.hasReturnCode = null;
+	self.lastOptions = null;
+	self.proxy = null;
+	if( self.worker )
+		self.worker.terminate();
+	self.worker = null;
+	self.data = null;
+	self.rawData = null;
+	self.varcount = null;
+	self.wsRequestID = null;
+	self.wsData = null;
+	self.connectionId = null;
+	self.hasReturnCode = null;
+	self.returnCode = null;
+	self.returnData = null;
+	self.method = null;
+	self.onload = null;
+	self.openFunc = null;
+	
 	
 	// finally
 	delete this;
+}
+cAjax.prototype.destroy = function()
+{
+	this.destroy = function(){};
+	
+	// Terminate with onload
+	if( this.onload )
+	{
+		//console.log( 'Should never happen.' );
+		this.onload( null, null );
+	}
+
+	// Clean out possible queue and replenish
+	RemoveFromCajaxQueue( this )
+	
+	// Clean up
+	this.destroySilent();
 }
 
 // Open an ajax query
@@ -339,20 +385,27 @@ cAjax.prototype.open = function( method, url, syncing, hasReturnCode )
 {
 	var self = this;
 	
+	if( this.opened )
+	{
+		//console.log( '[cajax] Impossible error! Illegal reuse of object.' );
+		this.destroy();
+		return;
+	}
 	this.opened = true;
 	
 	// Try websockets!!
 	if( 
 		!this.forceHTTP &&
 		this.proxy.responseType != 'arraybuffer' &&
-		typeof Workspace != 'undefined' && 
+		window.Workspace &&
 		Workspace.conn && 
 		Workspace.conn.ws && 
 		!Workspace.websocketsOffline && 
+		Workspace.websocketState == 'open' &&
 		typeof( url ) == 'string' && 
 		url.indexOf( 'system.library' ) >= 0 &&
-		url.indexOf( '/file/write' ) < 0 &&
-		url.indexOf( '/file/read' )
+		url.indexOf( '/file/read' ) < 0 &&
+		url.indexOf( '/file/write' ) < 0
 	)
 	{
 		this.mode = 'websocket';
@@ -370,8 +423,12 @@ cAjax.prototype.open = function( method, url, syncing, hasReturnCode )
 	if( this.lastOptions && !method && !url && !syncing && !hasReturnCode )
 	{
 		this.proxy.hasReturnCode = this.lastOptions.hasReturnCode;
-		this.openFunc = function(){ self.proxy.open( self.lastOptions.method, self.lastOptions.url, self.lastOptions.syncing ); };
-		return;
+		this.openFunc = function(){ 
+			//console.log( '[cajax] Last options opening: ' + self.lastOptions.url );
+			if( window.Workspace )
+				self.addVar( 'sessionid', Workspace.sessionId );
+			self.proxy.open( self.lastOptions.method, self.lastOptions.url, self.lastOptions.syncing ); 
+		};
 	}
 	else
 	{
@@ -390,8 +447,18 @@ cAjax.prototype.open = function( method, url, syncing, hasReturnCode )
 		if( !url ) url = this.url;
 		this.url = url;
 		this.proxy.hasReturnCode = hasReturnCode;
+		this.openFunc = function(){ 
+			if( window.Workspace )
+				self.addVar( 'sessionid', Workspace.sessionId );
+			var u = self.url;
+			if( u.substr( 0, 1 ) == '/' )
+			{
+				var urlbase = document.location.origin;
+				u = urlbase + u;
+			}
+			self.proxy.open( self.method, u, syncing ); 
+		};
 	}
-	this.openFunc = function(){ self.proxy.open( self.method, self.url, syncing ); };
 }
 
 // Close it!
@@ -408,9 +475,14 @@ cAjax.prototype.close = function()
 // Add a variable to ajax query
 cAjax.prototype.addVar = function( key, val )
 {
-	if( typeof( this.vars[key] ) == 'undefined' )
+	if( typeof( val ) == 'undefined' )
+	{
+		//// console.log( 'Test3: Trying to add undefined var.', key, val );
+		return;
+	}
+	if( typeof( this.vars[ key ] ) == 'undefined' )
 		this.varcount++;
-	this.vars[key] = encodeURIComponent( val );
+	this.vars[ key ] = encodeURIComponent( val );
 	return true;
 }
 
@@ -436,131 +508,81 @@ cAjax.prototype.responseText = function()
 }
 
 // Send ajax query
-cAjax.prototype.send = function( data )
+cAjax.prototype.send = function( data, callback )
 {
+	// Make sure we don't f this up!
+	if( this.onload && !this.onloadAfter )
+	{
+		this.onloadAfter = this.onload;
+		this.onload = function( e, d )
+		{
+			this.onload = null;
+			this.onloadAfter( e, d );
+			this.onloadAfter = null;
+		}
+	}
+
 	var self = this;
+	
+	if( self.life )
+	{
+		clearTimeout( self.life );
+		self.life = false;
+	}
+	
+	if( self.queued )
+	{
+		self.queued = false;
+		//console.log( '[cajax] This is running from queue.' );
+	}
+	
+	if( !data && this.cachedData )
+	{
+		data = this.cachedData;
+		this.cachedData = null;
+	}
+	
+	// Keep for later
+	if( data )
+		this.cachedData = data;
 
 	// Wait in case of relogin
-	if( typeof( Workspace ) != 'undefined' && Workspace.reloginInProgress && !this.forceSend )
+	if( window.Workspace && Workspace.reloginInProgress && !this.forceSend )
 	{
 		AddToCajaxQueue( self );
 		return;
 	}
-
-	// If we're in the queue, skip
-	if( this.queued ) return;
+	
+	// Can't have too many! Queue control
+	if( this.mode != 'websocket' )
+	{
+		if( !this.forceSend && _cajax_http_connections >= _cajax_http_max_connections )
+		{
+			AddToCajaxQueue( self );
+			return;
+		}
+		//console.log( '[cajax] We now are running ' + _cajax_http_connections + '/' + _cajax_http_max_connections + ' connections. (added one)' );
+		if( !this.forceSend )
+			_cajax_http_connections++;
+	}
+	
+	// Register successful send
+	_cajax_http_last_time = ( new Date() ).getTime();
 	
 	if( this.mode == 'websocket' && this.proxy.responseType == 'arraybuffer' )
 	{
 		this.mode = '';
 	}
 	
-	
-	// Which queue this goes into
-	this.fileQueue = this.url && this.url.substr( this.url.length - 5, 5 ) == '/copy';
-
-	// TODO: Research why this is a problem!
-	var pcount = _cajax_process_count;
-	var queue = _cajax_queue;
-	
-	if( this.fileQueue )
-	{
-		pcount = _cajax_file_process_count;
-		queue = _cajax_file_queue;
-	}
-	
-	// If we're not in the queue, and 
-	if( pcount > _cajax_queue_length )
-	{
-		if( !_cajax_send_interval )
-		{
-			_cajax_send_interval = setInterval( function()
-			{
-				var f = [];
-				// Take this current queue
-				for( var a = 0; a < _cajax_file_queue.length; a++ )
-				{
-					var q = _cajax_file_queue[ a ];
-					if( a < _cajax_queue_length )
-					{
-						try
-						{
-							ret = q();
-						}
-						catch( e )
-						{
-							console.log( 'This ajax file object does not exist.' );
-						}
-					}
-					else
-					{
-						f.push( q );
-					}
-				}
-				// Cleaned list
-				_cajax_file_queue = f;
-				
-				var o = [];
-				// Take this current queue
-				for( var a = 0; a < _cajax_queue.length; a++ )
-				{
-					var q = _cajax_queue[ a ];
-					if( a < _cajax_queue_length )
-					{
-						try
-						{
-							ret = q();
-						}
-						catch( e )
-						{
-							console.log( 'This ajax object does not exist.' );
-						}
-					}
-					else
-					{
-						o.push( q );
-					}
-				}
-				// Cleaned list
-				_cajax_queue = o;
-				
-				// Check
-				if( !f.length && !o.length )
-				{
-					clearInterval( _cajax_send_interval );
-					_cajax_send_interval = null;
-				}
-			}, 100 );
-		}
-		
-		// Copy goes in the file queue if server is there
-		if( Workspace.serverIsThere )
-		{
-			var of = function()
-			{
-				self.queued = false;
-				self.send( data, true );
-			}
-			this.queued = true;
-			queue.push( of );
-		}
-		else
-		{
-			this.destroy();
-		}
-		return;
-	}
-	
 	// Only if successful
 	function successfulSend( addBusy )
 	{
+		if( !addBusy ) return;
+		
 		// Update process count and set loading
-		if( self.fileQueue )
-			_cajax_file_process_count++;
-		else _cajax_process_count++;
-		if( addBusy )
+		if( ge( 'Screens' ) )
 		{
-			if( ge( 'Screens' ) )
+			if( _cajax_process_count > 0 )
 			{
 				var titleBars = document.getElementsByClassName( 'TitleBar' );
 				for( var b = 0; b < titleBars.length; b++ )
@@ -574,9 +596,10 @@ cAjax.prototype.send = function( data )
 		}
 	}
 
-	// TODO: Check that the websocket actually is OPEN (Chrome being silly)
-	if( self.mode == 'websocket' && Workspace.conn && Workspace.conn.ws )
+	// Check if we can use websockets
+	if( self.mode == 'websocket' && window.Workspace && Workspace.conn && Workspace.conn.ws && Workspace.websocketState == 'open' )
 	{
+		//console.log( '[cajax] Sending ajax call with websockets.' );
         var u = self.url.split( '?' );
         var wsdata = ( data ? data : {} );
         if( self.vars )
@@ -590,19 +613,12 @@ cAjax.prototype.send = function( data )
 	    // if we have parameters set in the URL we add them to the socket...
         if( u[1] )
         {
-			//console.log('we need to add this here as data', u[1]);
-			//console.log( u[1] );
 			var pairs = u[1].split( '&' );
 			for( var a = 0; a < pairs.length; a++ )
 			{
 				var p = pairs[a].split( '=' );
 				wsdata[p[0]] = p[1];
 			}
-			//console.log( 'Out:', wsdata );
-        }
-        else
-        {
-        	//console.log( wsdata );
         }
         
         var req = {
@@ -611,17 +627,23 @@ cAjax.prototype.send = function( data )
         };
         
         var reqID = Workspace.conn.request( req, bindSingleParameterMethod( self, 'handleWebSocketResponse' ) );
+        
+        if( typeof( reqID ) != 'undefined' && !reqID )
+        {
+        	AddToCajaxQueue( self );
+			return Workspace.relogin();
+        }
+        else if( typeof( reqID ) == 'undefined' )
+        {
+        	//console.log( 'cAjax: Request was undefined.' );
+        }
+        else
+        {
+        	// console.log( 'Test3: We got requestID: ' + reqID );
+        }
+        
         self.wsRequestID = reqID;
 		
-		// Add cancellable network connection
-		if( this.df && this.df.available ) 
-		{
-			// Don't overkill - only add connections taking more than 500 ms
-			self.dfTimeout = setTimeout( function()
-			{
-				self.df.addConnection( self.connectionId, self.url, self );
-			}, 500 );
-		}
 		// Not for module calls
 		var addBusy = true;
 		if( self.url.indexOf( 'module/' ) < 0 ) 
@@ -633,9 +655,6 @@ cAjax.prototype.send = function( data )
 	}
 
 	// standard HTTP way....
-	// Now
-	this.sendTime = ( new Date() ).getTime();
-	
 	if( this.openFunc )
 	{
 		this.openFunc();
@@ -652,14 +671,37 @@ cAjax.prototype.send = function( data )
 			// Send data
 			if( data ) 
 			{
-				res = this.proxy.send( data );
+				try
+				{
+					res = this.proxy.send( data );
+				}
+				catch( err )
+				{
+					if( self.onload )
+					{
+						self.onload( false, false );
+						self.destroy();
+					}
+				}
 			}
 			else if( this.varcount > 0 )
 			{
 				var out = [];
 				for( var a in this.vars )
 					out.push( a + '=' + this.vars[a] );
-				res = this.proxy.send( out.join ( '&' ) );
+				try
+				{
+					res = this.proxy.send( out.join ( '&' ) );
+				}
+				catch( err )
+				{
+					if( self.onload )
+					{
+						self.onload( false, false );
+						self.destroy();
+					}
+				}
+				// // console.log( 'Test2: Here u: ' + out.join( '&' ) );
 			}
 			// All else fails?
 			else
@@ -676,6 +718,7 @@ cAjax.prototype.send = function( data )
 			var u = this.url.split( '?' );
 			u = u[0] + '?' + ( u[1] ? ( u[1]+'&' ) : '' ) + 'cachekiller=' + this.getRandNumbers();
 			this.proxy.setRequestHeader( 'Method', 'GET ' + u + ' HTTP/1.1' );
+			// // console.log( 'Test2: Here: ' + u );
 			try 
 			{ 
 				res = this.proxy.send( null ); 
@@ -687,49 +730,46 @@ cAjax.prototype.send = function( data )
 		
 			//console.log( 'Getting ' + u );
 		}
+		
 		if( res )
 		{
-			succsessfulSend();
-			// Add cancellable network connection
-			if( this.df && this.df.available ) 
-			{
-				// Don't overkill - only add connections taking more than 500 ms
-				self.dfTimeout = setTimeout( function()
-				{
-					self.df.addConnection( self.connectionId, self.url, self );
-				}, 500 );
-			}
+			successfulSend();
 		}
+		
+		// New life
+		if( self.life ) clearTimeout( self.life );
+		self.life = setTimeout( function()
+		{
+			//console.log( 'Destroying self after ten seconds. ' + u );
+			self.destroy();
+		}, 10000 );
+		
+		//console.log( '[cajax] We sent stuff! ' + u );
+		
 		return;
 	}
+	else
+	{
+		//console.log( '[cajax] No openfunc!' );
+	}
 	// We were not successful!
+	//console.log( '[cajax] Just destroying.' );
 	this.destroy();
 }
 
 cAjax.prototype.decreaseProcessCount = function()
 {
-	if( this.fileQueue )
+	if( this.decreasedProcessCount ) return;
+	this.decreasedProcessCount = true;
+	_cajax_process_count--;
+	if( _cajax_process_count == 0 )
 	{
-		_cajax_file_process_count--;
-		if( _cajax_file_process_count < 0 )
-			_cajax_file_process_count = 0;
-	}
-	else
-	{
-		_cajax_process_count--;
-		if( _cajax_process_count <= 0 )
+		var titleBars = document.getElementsByClassName( 'TitleBar' );
+		for( var b = 0; b < titleBars.length; b++ )
 		{
-			_cajax_process_count = 0;
-			if( ge( 'Screens' ) )
-			{
-				var titleBars = document.getElementsByClassName( 'TitleBar' );
-				for( var b = 0; b < titleBars.length; b++ )
-				{
-					titleBars[b].classList.remove( 'Busy' );
-					document.body.classList.remove( 'Busy' );
-				}
-			}
+			titleBars[b].classList.remove( 'Busy' );
 		}
+		document.body.classList.remove( 'Busy' );
 	}
 }
 
@@ -737,16 +777,42 @@ cAjax.prototype.handleWebSocketResponse = function( wsdata )
 {	
 	var self = this;
 	
+	if( self.life )
+		clearTimeout( self.life );
+	self.life = setTimeout( function()
+	{
+		//console.log( '[cajax] Defunct ajax object destroying self after five seconds. 2' );
+		self.destroy();
+		self.life = false;
+	}, 5000 );
+	
+	// The data just failed - which means the websocket went away!
+	if( typeof( wsdata ) == 'undefined' )
+	{
+		if( Workspace )
+		{
+			// Add to queue
+			AddToCajaxQueue( self );
+			return Workspace.relogin();
+		}
+		self.destroy();
+		return;
+	}
+	
 	if( typeof( wsdata ) == 'object' && wsdata.response )
 	{
 		self.rawData = 'fail';
-		self.proxy.responseText = self.rawData;
+		if( self.proxy )
+			self.proxy.responseText = self.rawData;
+		//else console.log( 'No more proxy 1..', wsdata, self.onload );
 		self.returnCode = 'fail';
 		self.destroy();
 		return false;
 	}
 	
-	self.proxy.responseText = wsdata;
+	if( self.proxy )
+		self.proxy.responseText = wsdata;
+	//else console.log( 'No more proxy..', wsdata, self.onload );
 	self.rawData = wsdata;
 	self.wsData = wsdata;
 	
@@ -791,13 +857,14 @@ cAjax.prototype.handleWebSocketResponse = function( wsdata )
 		{
 			var t = JSON.parse( self.returnData );
 			// Deprecate from 1.0 beta 2 "no user!"
-			if( t && ( t.response == 'user not found' || t.response == 'user session not found' ) )
+			if( t && ( t.response.toLowerCase() == 'user not found' || t.response.toLowerCase() == 'user session not found' ) )
 			{
+				if( window.Workspace && t.response.toLowerCase() == 'user session not found' ) 
+					Workspace.flushSession();
 				if( Workspace )
 				{
 					// Add to queue
 					AddToCajaxQueue( self );
-					Workspace.flushSession();
 					return Workspace.relogin();
 				}
 			}
@@ -806,12 +873,13 @@ cAjax.prototype.handleWebSocketResponse = function( wsdata )
 		{
 			if( !self.rawData )
 			{
-				if( Workspace )
-				{
-					AddToCajaxQueue( self );
-					Workspace.flushSession();
-					return Workspace.relogin();
-				}
+				//console.log( '[cAjax] Could not understand server response: ', self.returnData );
+				self.destroy();
+				return;
+			}
+			else
+			{
+				// console.log( 'Test3: Impossible server response: ', self.returnData );
 			}
 		}
 	}
@@ -821,15 +889,17 @@ cAjax.prototype.handleWebSocketResponse = function( wsdata )
 		try
 		{
 			var r = JSON.parse( self.returnData );
-			if( r.response == 'user session not found' )
+			if( r.response.toLowerCase() == 'user session not found' )
 			{
+				if( window.Workspace )
+					Workspace.flushSession();
 				AddToCajaxQueue( self );
-				Workspace.flushSession();
 				return Workspace.relogin();
 			}
 		}
 		catch( e )
 		{
+			//console.log( 'Test3: Impossible server response: ', self.returnData, self.returnData, wsdata );
 		}
 	}
 
@@ -837,7 +907,9 @@ cAjax.prototype.handleWebSocketResponse = function( wsdata )
 	if( typeof( self.returnData ) == 'string' )
 	{
 		if( self.returnData.length > 0 && !self.returnCode )
+		{
 			self.returnCode = 'ok';
+		}
 	}
 	if( self.onload )
 	{
@@ -845,8 +917,9 @@ cAjax.prototype.handleWebSocketResponse = function( wsdata )
 	}
 	else
 	{
-		console.log( 'got ws data... but nowhere to send it' );
+		//console.log( 'got ws data... but nowhere to send it' );
 	}
+	
 	self.destroy();
 }
 

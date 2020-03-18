@@ -1,7 +1,7 @@
 /*
  * libwebsockets-test-server - libwebsockets test implementation
  *
- * Copyright (C) 2010-2017 Andy Green <andy@warmcat.com>
+ * Written in 2010-2019 by Andy Green <andy@warmcat.com>
  *
  * This file is made available under the Creative Commons CC0 1.0
  * Universal Public Domain Dedication.
@@ -21,14 +21,21 @@
 #include <libwebsockets.h>
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(LWS_HAS_GETOPT_LONG) || defined(WIN32)
 #include <getopt.h>
+#endif
 #include <signal.h>
+
+#if defined(WIN32) || defined(_WIN32)
+#else
+#include <unistd.h>
+#endif
 
 int close_testing;
 int max_poll_elements;
-int debug_level = 7;
+int debug_level = LLL_USER | 7;
 
-#ifdef EXTERNAL_POLL
+#if defined(LWS_WITH_EXTERNAL_POLL)
 struct lws_pollfd *pollfds;
 int *fd_lookup;
 int count_pollfds;
@@ -106,10 +113,13 @@ lws_callback_http(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				continue;
 			}
 
-			lws_hdr_copy(wsi, buf, sizeof buf, n);
-			buf[sizeof(buf) - 1] = '\0';
+			if (lws_hdr_copy(wsi, buf, sizeof buf, n) < 0)
+				fprintf(stderr, "    %s (too big)\n", (char *)c);
+			else {
+				buf[sizeof(buf) - 1] = '\0';
 
-			fprintf(stderr, "    %s = %s\n", (char *)c, buf);
+				fprintf(stderr, "    %s = %s\n", (char *)c, buf);
+			}
 			n++;
 		} while (c);
 
@@ -295,6 +305,7 @@ static const struct lws_protocol_vhost_options pvo = {
 	""				/* ignored */
 };
 
+#if defined(LWS_HAS_GETOPT_LONG) || defined(WIN32)
 static struct option options[] = {
 	{ "help",	no_argument,		NULL, 'h' },
 	{ "debug",	required_argument,	NULL, 'd' },
@@ -320,15 +331,13 @@ static struct option options[] = {
 	{ "pingpong-secs", required_argument,	NULL, 'P' },
 	{ NULL, 0, 0, 0 }
 };
+#endif
 
 int main(int argc, char **argv)
 {
 	struct lws_context_creation_info info;
 	struct lws_vhost *vhost;
 	char interface_name[128] = "";
-#ifdef EXTERNAL_POLL
-	unsigned int ms;
-#endif
 	const char *iface = NULL;
 	char cert_path[1024] = "";
 	char key_path[1024] = "";
@@ -350,7 +359,11 @@ int main(int argc, char **argv)
 	info.port = 7681;
 
 	while (n >= 0) {
+#if defined(LWS_HAS_GETOPT_LONG) || defined(WIN32)
 		n = getopt_long(argc, argv, "eci:hsap:d:DC:K:A:R:vu:g:P:kU:n", options, NULL);
+#else
+		n = getopt(argc, argv, "eci:hsap:d:DC:K:A:R:vu:g:P:kU:n");
+#endif
 		if (n < 0)
 			continue;
 		switch (n) {
@@ -360,9 +373,6 @@ int main(int argc, char **argv)
 #ifndef LWS_NO_DAEMONIZE
 		case 'D':
 			daemonize = 1;
-			#if !defined(_WIN32) && !defined(__sun)
-			syslog_options &= ~LOG_PERROR;
-			#endif
 			break;
 #endif
 		case 'u':
@@ -469,8 +479,12 @@ int main(int argc, char **argv)
 	lwsl_notice("(C) Copyright 2010-2018 Andy Green <andy@warmcat.com>\n");
 
 	printf("Using resource path \"%s\"\n", resource_path);
-#ifdef EXTERNAL_POLL
+#if defined(LWS_WITH_EXTERNAL_POLL)
+#if !defined(WIN32) && !defined(_WIN32) && !defined(__ANDROID__)
 	max_poll_elements = getdtablesize();
+#else
+	max_poll_elements = sysconf(_SC_OPEN_MAX);
+#endif
 	pollfds = malloc(max_poll_elements * sizeof (struct lws_pollfd));
 	fd_lookup = malloc(max_poll_elements * sizeof (int));
 	if (pollfds == NULL || fd_lookup == NULL) {
@@ -526,7 +540,7 @@ int main(int argc, char **argv)
 			       "!AES256-SHA256";
 	info.mounts = &mount;
 	info.ip_limit_ah = 24; /* for testing */
-	info.ip_limit_wsi = 105; /* for testing */
+	info.ip_limit_wsi = 400; /* for testing */
 
 	if (use_ssl)
 		/* redirect guys coming on http */
@@ -554,7 +568,7 @@ int main(int argc, char **argv)
 
 	info.port++;
 
-#if !defined(LWS_NO_CLIENT) && defined(LWS_WITH_TLS)
+#if defined(LWS_WITH_CLIENT) && defined(LWS_WITH_TLS)
 	lws_init_vhost_client_ssl(&info, vhost);
 #endif
 
@@ -568,9 +582,6 @@ int main(int argc, char **argv)
 	lws_get_fops(context)->open = test_server_fops_open;
 
 	n = 0;
-#ifdef EXTERNAL_POLL
-	int ms_1sec = 0;
-#endif
 	while (n >= 0 && !force_exit) {
 		struct timeval tv;
 
@@ -582,12 +593,11 @@ int main(int argc, char **argv)
 		 * as soon as it can take more packets (usually immediately)
 		 */
 
-#ifdef EXTERNAL_POLL
+#if defined(LWS_WITH_EXTERNAL_POLL)
 		/*
 		 * this represents an existing server's single poll action
 		 * which also includes libwebsocket sockets
 		 */
-		ms = (tv.tv_sec * 1000) + (tv.tv_usec / 1000);
 		n = poll(pollfds, count_pollfds, 50);
 		if (n < 0)
 			continue;
@@ -609,25 +619,15 @@ int main(int argc, char **argv)
 				lwsl_notice("extpoll doing forced service!\n");
 				lws_service_tsi(context, -1, 0);
 			}
-		} else {
-			/* no revents, but before polling again, make lws check for any timeouts */
-			if (ms - ms_1sec > 1000) {
-				lwsl_notice("1 per sec\n");
-				lws_service_fd(context, NULL);
-				ms_1sec = ms;
-			}
 		}
 #else
 		/*
 		 * If libwebsockets sockets are all we care about,
 		 * you can use this api which takes care of the poll()
 		 * and looping through finding who needed service.
-		 *
-		 * If no socket needs service, it'll return anyway after
-		 * the number of ms in the second argument.
 		 */
 
-		n = lws_service(context, 50);
+		n = lws_service(context, 0);
 #endif
 
 		if (dynamic_vhost_enable && !dynamic_vhost) {
@@ -642,7 +642,7 @@ int main(int argc, char **argv)
 
 	}
 
-#ifdef EXTERNAL_POLL
+#if defined(LWS_WITH_EXTERNAL_POLL)
 done:
 #endif
 

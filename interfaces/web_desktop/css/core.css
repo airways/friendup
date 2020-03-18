@@ -1,5 +1,10 @@
 /* Base setup */
 
+body *
+{
+	-webkit-tap-highlight-color: transparent;
+}
+
 :-webkit-full-screen-ancestor>:not(:-webkit-full-screen-ancestor):not(:-webkit-full-screen)
 {
  display:none!important
@@ -17,6 +22,28 @@
 	display:none!important
 }
 
+/* TEMPORARY TESThtml body.ViewStateActive:after,
+html body:not(.ViewStateActive):after 
+{
+    position: absolute;
+    display: block;
+    content: " ";
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+    border-top: 2px solid green;
+    pointer-events: none;
+    box-sizing: border-box;
+    z-index: 9999;
+}
+
+html body:not(.ViewStateActive):after 
+{
+	border-top: 2px solid red;
+}
+ */
+
 html
 {
 	position: absolute;
@@ -28,6 +55,7 @@ html
 	padding: 0;
 	user-select: none;
 	-webkit-user-select: none;
+	overflow: hidden;
 }
 
 body
@@ -46,6 +74,14 @@ body
    -ms-transform: rotateZ(0deg);
  	transform: rotateZ(0deg);*/
 	overflow: hidden;
+}
+
+/* Preload images */
+body > img
+{
+	visibility: hidden;
+	position: absolute;
+	pointer-events: none;
 }
 
 iframe.hidden
@@ -89,6 +125,11 @@ body > #FocusGrabber
 {
 	position: fixed;
 	top: 100%;
+}
+
+.NoEvents
+{
+	pointer-events: none;
 }
 
 /* Some backgrounds and colors */
@@ -199,10 +240,28 @@ select
 	pointer-events: none;
 }
 
+#MousePointer > div
+{
+	filter: drop-shadow(0px 2px 6px rgba(0,0,0,0.4));
+	transform: rotate3d(0deg);
+}
+
+html #MousePointer .File .Title
+{
+	background-color: transparent;
+	filter: sepia(1);
+}
+
 .MousePointer
 {
 	cursor: hand;
 	cursor: pointer;
+}
+
+#MousePointer .MousePointer
+{
+	background-repeat: no-repeat;
+	background-position: center;
 }
 
 .MouseCrosshair
@@ -262,6 +321,11 @@ button::-moz-focus-inner
 	padding:0;
 }
 
+.ButtonHeight
+{
+	height: 28px;
+}
+
 button, .Button
 {
 	display: inline;
@@ -284,14 +348,20 @@ button, .Button
 	cursor: pointer;
 	position: relative;
 	outline: 0 !important;
+	font-size: inherit;
+}
+
+button, .ButtonAlt
+{
+	color: $ColorButton;
+	background-color: $ColorBgButtonAlt;
 }
 
 body button.IconButton:not(:hover),
 body .Button.IconButton:not(:hover)
 {
-	background: none !important;
-	background-color: none !important;
-	border: 1px solid transparent !important;
+	background-color: transparent !important;
+	border: 1px solid rgba(0,0,0,0) !important;
 	padding: 5px 5px;
 }
 
@@ -432,6 +502,24 @@ textarea
 	font-size: $FontSizeButton;
 }
 
+textarea.Required,
+input.Required
+{
+	border-color     : $ColorDangerBg;
+}
+
+.FileUploadWrapper { position: relative; overflow: hidden; }
+.FileUploadWrapper input[type=file]
+{
+  font-size: 100px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  opacity: 0;
+  z-index:2;
+
+}
+
 /* Boxes -------------------------------------------------------------------- */
 
 .Disabled
@@ -463,6 +551,12 @@ textarea
 	background: #C3CFD4;
 	border-color: #A9B3B8;
 	border-bottom: 1px solid #9BA4A8;
+}
+
+.BoxSelected
+{
+	box-sizing: border-box;
+	box-shadow: 0px 0px 1px $ColorLightBorder;
 }
 
 .Recessed
@@ -575,6 +669,22 @@ textarea
 	display: block;
 	content: " ";
 	clear: both;
+}
+
+.VDivider
+{
+	display: inline-block;
+	vertical-align: bottom;
+	border: 0;
+	border-left: 1px solid rgba(0,0,0,0.5);
+	margin: 0 5px 0 5px;
+	height: 31px;
+	width: 3px;
+}
+
+.VDivider.Large
+{
+	height: 40px;
 }
 
 hr.Divider
@@ -714,6 +824,29 @@ p.Layout
 	box-sizing: border-box;
 }
 
+.PaddingSmallLeft
+{
+	padding-left: 4px;
+	box-sizing: border-box;
+}
+
+.PaddingSmallTop
+{
+	padding-top: 4px;
+	box-sizing: border-box;
+}
+
+.PaddingSmallRight
+{
+	padding-right: 4px;
+	box-sizing: border-box;
+}
+
+.PaddingSmallBottom
+{
+	padding-bottom: 4px;
+	box-sizing: border-box;
+}
 
 .PadBorder {
     border : 0.2em solid $ColorBackground;
@@ -1015,6 +1148,17 @@ table.Calendar td:hover { background: #333333; color: #ffffff; }
 
 /* Screen menu -------------------------------------------------------------- */
 
+.SmoothScrolling
+{
+	scroll-behavior: smooth;
+	-webkit-scroll-behavior: smooth;
+	-webkit-overflow-scrolling: touch;
+}
+[mobile] .SmoothScrolling
+{
+	overflow-y: scroll;
+}
+
 #WorkspaceMenu
 {
 	position: absolute;
@@ -1041,7 +1185,7 @@ table.Calendar td:hover { background: #333333; color: #ffffff; }
 #WorkspaceMenu .Menu li.Submenu:after
 {
 	font-family: FontAwesome;
-	content: "\f061";
+	content: "\f0da";
 	display: block;
 	float: right;
 	color: black;
@@ -1233,6 +1377,11 @@ html #WorkspaceMenu .Menu li.Disabled *
 	color: $ColorNegative;
 }
 
+.NegativeAlt
+{
+	color: $ColorNegativeAlt;
+}
+
 a.Negative:hover, a.Negative:active, a.Negative:visited
 {
 	color: $ColorNegative;
@@ -1275,9 +1424,19 @@ a.Negative:hover, a.Negative:active, a.Negative:visited
 	background: $ColorBgNegative;
 }
 
+.BackgroundNegativeAlt
+{
+	background: $ColorBgNegativeAlt;
+}
+
 .BackgroundPositive
 {
 	background: $ColorBgPositive;
+}
+
+.BackgroundPositiveAlt
+{
+	background: $ColorBgPositiveAlt;
 }
 
 .BackgroundHighlight
@@ -1294,9 +1453,19 @@ a.Negative:hover, a.Negative:active, a.Negative:visited
 	background-color : $ColorAvailableBg;
 }
 
+.AvailableText {
+	color : $ColorAvailableBg;
+	background-color : transparent;
+}
+
 .Accept {
 	color : $ColorAccept;
 	background-color : $ColorAcceptBg;
+}
+
+.AcceptText {
+	color : $ColorAcceptBg;
+	background-color : transparent;
 }
 
 .Danger {
@@ -1304,14 +1473,29 @@ a.Negative:hover, a.Negative:active, a.Negative:visited
 	background-color : $ColorDangerBg;
 }
 
+.DangerText {
+	color : $ColorDangerBg;
+	background-color : transparent;
+}
+
 .Warning {
 	color : $ColorWarning;
 	background-color : $ColorWarningBg;
 }
 
+.WarningText {
+	color : $ColorWarningBg;
+	background-color : transparent;
+}
+
 .Action {
 	color : $ColorAction;
 	background-color : $ColorActionBg;
+}
+
+.ActionText {
+	color : $ColorActionBg;
+	background-color : transparent;
 }
 
 .Highlight {
@@ -1557,6 +1741,11 @@ a.Negative:hover, a.Negative:active, a.Negative:visited
 
 /* Calendar ----------------------------------------------------------------- */
 
+.HidingCalendar #CalendarWidget
+{
+	height: 0px !important;
+}
+
 .Calendar.MonthName
 {
 	padding: 8px;
@@ -1756,6 +1945,28 @@ html .Calendar div.HRow > .Current.Day:nth-child(even):hover
 	color: white;
 	border-radius: 3px;
 }
+
+.Widget.Fadable
+{
+	transition: opacity 0.25s;
+	opacity: 0;
+}
+
+.Widget.Faded
+{
+	opacity: 0;
+}
+
+.Widget.Fadable.Fadeout
+{
+	opacity: 0;
+}
+
+.Widget.Fadable.Fadein
+{
+	opacity: 1;
+}
+
 html body .Widget.Raised
 {
 	z-index: 2147483643;
@@ -1764,6 +1975,11 @@ html body .Widget.Raised
 html body[mobile=mobile] .Widget.Raised
 {
 	
+}
+
+.Widget.Faded
+{
+	opacity: 0;
 }
 
 html body.WindowMenu .Widget
@@ -1777,6 +1993,32 @@ html body.WindowMenu .Widget
 	width: 100%;
 	height: 100%;
 	overflow: hidden;
+}
+
+.Widget .MenuItems
+{
+	transition: all 0.15s;
+	opacity: 0;
+	border-radius: 4px;
+	height: 0px;
+	box-shadow: 0px 2px 4px rgba(0,0,0,0.6);
+	max-height: 0px;
+	overflow: hidden;
+	background: rgba(0,0,0,0.6);
+}
+
+.Widget .MenuItems.Open
+{
+	opacity: 1;
+	max-height: -moz-fit-content;
+	max-height: fit-content;
+}
+
+.Widget .MenuItems.Closing
+{
+	opacity: 0;
+	max-height: -moz-fit-content;
+	max-height: fit-content;
 }
 
 .Widget .MenuItems .MenuItem
@@ -1801,7 +2043,7 @@ html body.WindowMenu .Widget
 	display: block;
 	margin: 0;
 	padding: 10px 10px 5px 10px;
-	border-bottom: 1px solid rgba(255,255,255,0.5);
+	border-bottom: 1px solid rgba(0,0,0,0.6);
 	color: white;
 	text-shadow: 0px 1px 1px rgba(0,0,0,0.6);
 }
@@ -1810,6 +2052,73 @@ html body.WindowMenu .Widget
 {
 	padding-bottom: 10px;
 	border-radius: 0 0 3px 3px;
+}
+
+.Widget.HelpBubble:after
+{
+	content: " ";
+	display: block;
+	position: absolute;
+	top: 100%;
+	height: 30px;
+	left: calc(50% - 10px);
+	width: 20px;
+	background-image: url(/webclient/gfx/system/triangle_high.svg);
+	background-size: cover;
+	background-position: top center;
+	background-repeat: no-repeat;
+	opacity: 0.6;
+}
+
+.Widget.HelpBubble
+{
+	border-radius: 25px;
+}
+
+.Widget.HelpBubble.Fadable,
+.Widget.HelpBubble.Fadable:after
+{
+	transition: margin-top,height 0.25s,0.25s;
+}
+
+.Widget.HelpBubble.Fadable
+{
+	margin-top: 0;
+}
+
+.Widget.HelpBubble.Fadable.Fadein
+{
+	margin-top: -10px;
+}
+
+.Widget.HelpBubble.Fadable.Fadein:after
+{
+	height: 10px;
+}
+
+.Widget.HelpBubble.Fadable.Right:after
+{
+	left: calc(100% - 5px);
+	transform: rotate(270deg);
+	top: calc(50% - 4px);
+}
+
+.Widget.HelpBubble.Fadable.Left:after
+{
+	left: -15px;
+	transform: rotate(90deg);
+	top: calc(50% - 5px);
+}
+
+.Widget.HelpBubble.Fadable.Top:after
+{
+	top: -10px;
+	transform: rotate(180deg);
+}
+
+.Widget.HelpBubble.Fadable:after
+{
+	height: 5px;
 }
 
 /* Formerly doors.css ------------------------------------------------------- */
@@ -1823,9 +2132,6 @@ body.Inside
 
 body #Screens
 {
-	background-image: url(/webclient/theme/loginimage.jpg);
-	background-position: center center;
-	background-size: cover;
 }
 
 body.Login > img
@@ -1853,21 +2159,34 @@ body.Loading > #Screens
 	opacity: 0;
 }
 
-body:not(.friendapp).Loading:after
+body.LoadingForm > div
+{
+	display: none;
+}
+
+body:not([viewlist]):not(.friendapp):not([mobile]).Loading:after,
+body:not([viewlist]):not(.friendapp):not([mobile]).LoadingForm:after,
+div.Loading:after
 {
 	content: ' ';
-	background: url(/themes/friendup12/gfx/loading.gif) no-repeat center center #222222;
+	background: url(/themes/friendup12/gfx/busy.png) no-repeat center center #222222;
 	position: absolute;
 	top: calc(50% - 30px);
-	left: calc(50% - 40px);
+	left: calc(50% - 30px);
 	height: 60px;
-	width: 80px;
+	width: 60px;
 	color: white;
-	padding: 0 10px;
+	padding: 0;
 	text-align: center;
-	border-radius: 10px;
+	border-radius: 60px;
 	animation: bodyLoading 0.1s;
 	-webkit-animation: bodyLoading 0.1s;
+	z-index: 99999999999;
+}
+
+body[mobile].Loading:after, body[mobile].LoadingForm:after
+{
+	display: none;
 }
 
 @-webkit-keyframes bodyLoading
@@ -1928,11 +2247,15 @@ body #DeepestField
 {
     position: absolute;
     right: 0;
-    bottom: 0;
     min-width: 0px;
     max-width: 300px;
     height: 32px;
     z-index: 999;
+}
+
+[mobile] #Tray
+{
+	display: none;
 }
 
 html #Tray.Size16
@@ -1968,12 +2291,6 @@ html #Tray.Size16
 	background-size: contain;
 }
 
-#Tray > div:hover
-{
-    color: #ffee00;
-    text-shadow: 0px 0px 5px rgba(255,255,255,0.5);
-}
-
 .SpeechResponse
 {
 	position: absolute;
@@ -1997,6 +2314,24 @@ html #Tray.Size16
 }
 
 /* Some info from the tray */
+
+#Tray .NumberOfNotifications
+{
+	pointer-events: none;
+	position: absolute;
+	top: 6px;
+	left: 19px;
+	font-size: 65%;
+	color: white;
+	background: #C92918;
+	border-radius: 100%;
+	padding: 0;
+	border: 0;
+	line-height: 11px;
+	width: 11px;
+	height: 11px;
+	text-align: center;
+}
 
 .BubbleInfo, .PopInfo
 {
@@ -2022,7 +2357,7 @@ html body .PopInfo + .BubbleInfo
 {
 	position: absolute;
 	right: 0px;
-	bottom: 8px;
+	top: 35px;
 	min-width: 100px;
 	max-height: 0px;
 	border-radius: 5px;
@@ -2033,7 +2368,28 @@ html body .PopInfo + .BubbleInfo
 	font-size: 95%;
 	transition: max-height,padding 0.25s,0.25s;
 	overflow: hidden;
-	line-height: 20px
+	line-height: 20px;
+	border-bottom-width: 0;
+}
+
+#Tray .Hidden { display: none; }
+
+.TrayElement.Blink:before
+{
+	/*animation: blinking 1s infinite;*/
+}
+
+@keyframes blinking
+{
+	0% { opacity: 0.5; }
+	50% { opacity: 1; }
+	100% { opacity: 0.5; }
+}
+
+.TrayElement.Hidden,
+html body[viewlist=dockedlist] #Statusbar #Tray > div.Hidden
+{
+	display: none;
 }
 
 .TrayElement.Notification .BubbleInfo,
@@ -2052,13 +2408,35 @@ html body .PopInfo + .BubbleInfo
 	padding: 8px;
 }
 
+#Tray .Notification .BubbleInfo p.Layout
+{
+	overflow-x: hidden;
+	text-overflow: ellipsis;
+}
+
+#Tray > .Notification > .TrayInformation
+{
+	position: absolute;
+	display: block;
+	width: 300px;
+	bottom: 40px;
+	right: 0px;
+	background: rgba(0,0,0,0.8);
+	color: white;
+	text-align: left;
+}
+#Tray > .Notification > .TrayInformation *
+{
+	color: white;
+}
+
 .PopInfo:before,
 .BubbleInfo:before
 {
 	content: " ";
 	display: block;
 	position: absolute;
-	bottom: 7px;
+	top: 30px;
 	width: 0px;
 	height: 0px;
 	right: 15px;
@@ -2078,6 +2456,12 @@ html body .PopInfo + .BubbleInfo
 	bottom: 0;
 	height: 30px;
 	opacity: 0;
+	pointer-events: none;
+}
+
+.TrayElement:hover .BubbleInfo:after
+{
+	pointer-events: all;
 }
 
 .TrayElement:hover .BubbleInfo:before, 
@@ -2109,19 +2493,46 @@ html body .PopInfo + .BubbleInfo
 
 /* Various built-in icons */
 
+.TrayElement.Download:before
+{
+	font-family: fontawesome;
+	content: "\f0ed";
+	font-size: 135%;
+	text-align: center;
+	line-height: 24px;
+}
+
+#Tray.Size16 .TrayElement.Download:before
+{
+    font-size: 93%;
+    line-height: 18px;
+}
+
 .TrayElement.Tasks:before
 {
-	background-image: url(/graphics/tasks.png);
+	font-family: fontawesome;
+	content: "\f0ae";
+	font-size: 125%;
+	text-align: center;
+	line-height: 24px;
 }
 
 .TrayElement.Notification:before
 {
-	background-image: url(/graphics/notifications.png);
+	font-family: fontawesome;
+	content: "\f0f3";
+	font-size: 105%;
+	text-align: center;
+	line-height: 24px;
 }
 
 .TrayElement.Disks:before
 {
-	background-image: url(/graphics/disks.png);
+	font-family: fontawesome;
+	content: "\f07c";
+	font-size: 135%;
+	text-align: center;
+	line-height: 24px;
 }
 
 .TrayElement:hover .BubbleInfo.List > div 
@@ -2359,6 +2770,7 @@ body:not([tablet]):not([mobile]) .Desklet .Launcher.Startmenu:hover
 	margin: 5px auto;
 	text-align: center;
 	position: relative;
+	pointer-events: none;
 }
 .Desklet .Launcher.Minimized .ElementCount > span
 {
@@ -2368,6 +2780,106 @@ body:not([tablet]):not([mobile]) .Desklet .Launcher.Startmenu:hover
 	font-size: 12px;
 	padding: 1px 4px;
 	border-radius: 100%;
+}
+
+#Tasks
+{
+	pointer-events: none;
+	visibility: hidden;
+}
+
+/* Tasks overlay ------------------------------------------------------------ */
+
+body[mobile] #TaskSwitcher
+{
+	display: none;
+}
+
+body:not([mobile]) #TaskSwitcher
+{
+	position: absolute;
+	top: calc(50% - 100px);
+	left: 20%;
+	width: 60%;
+	height: 120px;
+	border-radius: 5px;
+	background: rgba(0,0,0,0.7);
+	transition: opacity 0.25s;
+	opacity: 0;
+	pointer-events: none;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+body:not([mobile]).ShowTasks #TaskSwitcher
+{
+	opacity: 1;
+	pointer-events: all;
+}
+
+body:not([mobile]).ShowTasks #TaskSwitcher .Current .Close
+{
+	background-color: rgba(100,100,100,0.4);
+	box-shadow: 0px 0px 2px 2px rgba(255,255,225,0.4);
+}
+
+#TaskSwitcher .WindowItem
+{
+	width: 100px;
+	height: 100px;
+	position: absolute;
+	transition: left 0.25s;
+}
+
+#TaskSwitcher .WindowItem .Close
+{
+	position: absolute;
+	top: 0px;
+	left: 0px;
+	width: 100px;
+	height: 80px;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: 60%;
+	border-radius: 10px;
+}
+
+#TaskSwitcher .WindowItem .CloseButton
+{
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 26px;
+	height: 26px;
+	text-align: center;
+	line-height: 26px;
+	background: rgba(0,0,0,0.6);
+	border-radius: 50%;
+}
+#TaskSwitcher .WindowItem .CloseButton:after
+{
+	content: "\f00d";
+	font-family: fontawesome;
+	font-size: 1.2em;
+	color: white;
+}
+
+#TaskSwitcher .WindowItem .Close img
+{
+	display: none;
+}
+
+#TaskSwitcher .WindowItem .Taskname
+{
+	position: absolute;
+	bottom: 0;
+	height: 20px;
+	text-align: center;
+	color: white;
+	width: 100%;
+	line-height: 26px;
+	text-overflow: ellipsis;
+	overflow: hidden;
 }
 
 /* Desklet widget end ------------------------------------------------------- */
@@ -2479,7 +2991,7 @@ body:not([tablet]):not([mobile]) .Desklet .Launcher.Startmenu:hover
 
 #DoorsScreen .Left > .VirtualWorkspaces > div.Active
 {
-	background: rgba(0,0,0,0.8);
+	background: transparent;
 	color: white;
 }
 
@@ -2500,6 +3012,25 @@ body:not([tablet]):not([mobile]) .Desklet .Launcher.Startmenu:hover
 	text-shadow: none;
 }
 
+/* Search */
+
+[mobile] #SearchGuiContainer
+{
+	position: absolute;
+	width: calc(100% - 20px);
+	height: 75px;
+}
+
+[mobile] #WorkspaceSearchResults
+{
+	position: absolute;
+	top: 85px;
+	width: calc(100% - 20px);
+	height: calc(100% - 95px);
+	overflow: auto;
+}
+
+
 /* Wallpapers */
 
 .WorkspaceWallpaper
@@ -2516,6 +3047,11 @@ body:not([tablet]):not([mobile]) .Desklet .Launcher.Startmenu:hover
 	position: absolute;
 	top: 0;
 	overflow: hidden;
+}
+
+.Inside #Screens
+{
+	background: rgba(0,0,0,0.5);
 }
 
 /* Don't show the .Offline thing on the desktop */
@@ -2683,28 +3219,42 @@ body:not([tablet]):not([mobile]) .Desklet .Launcher.Startmenu:hover
 {
 	width: 32px;
 	height: 32px;
-	border-left: 1px solid #f0f0f0;
 	position: absolute;
 	right: 0;
 	top: 0;
+	color: #455155;
+}
+
+.Screen > .TitleBar .ScreenList:after
+{
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: block;
+	content: "\f096";
+	font-family: "fontawesome";
+	width: 28px;
+	text-align: center;
+	line-height: 24px;
+	font-size: 1em;
+}
+.Screen > .TitleBar .ScreenList:before
+{
+	position: absolute;
+	top: 4px;
+	left: 4px;
+	display: block;
+	content: "\f0c8";
+	font-family: "fontawesome";
+	width: 28px;
+	text-align: center;
+	line-height: 24px;
+	font-size: 0.9em;
 }
 
 .Screen > .TitleBar .ScreenList:active
 {
 	opacity: 0.5;
-}
-
-.Screen > .TitleBar .ScreenList > img
-{
-	position: absolute;
-	top: 4px;
-	left: 4px;
-}
-
-.Screen > .TitleBar .ScreenList:Active img
-{
-	opacity: 0.5;
-	filter:opacity(alpha=50);
 }
 
 .Frameloader, .Imageloader
@@ -2760,6 +3310,47 @@ body:not([tablet]):not([mobile]) .Desklet .Launcher.Startmenu:hover
 	-moz-box-sizing: border-box;
 	box-shadow: inset 0px 2px 8px rgba(0,0,0,0.3);
 	overflow: hidden;
+}
+
+html .DirectoryToolbar button.Makedir:before
+{
+	content: " ";
+	width: 16px;
+	height: 26px;
+	margin-top: 0;
+	display: inline-block;
+	background-image: url(/iconthemes/friendup15/AddFolder.svg);
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: contain;
+	background-color: transparent;
+}
+
+html .DirectoryToolbar button.Makedir
+{
+	color: transparent;
+}
+
+html .DirectoryToolbar button.Search:before
+{
+	content: "\f002";
+	font-family: fontawesome;
+	width: 16px;
+	height: 26px;
+	line-height: 26px;
+	font-size: 0.9em;
+	margin-top: 0;
+	display: inline-block;
+	background-image: none;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: contain;
+	background-color: transparent;
+}
+
+html .DirectoryToolbar button.Search
+{
+	color: transparent;
 }
 
 .Active .DirectoryToolbar
@@ -3139,17 +3730,6 @@ html body[viewlist=dockedlist] #Statusbar
 	left: auto;
 }
 
-html body[viewlist=dockedlist] #Statusbar #Tray
-{
-	white-space: nowrap;
-	position: relative;
-}
-
-html body[viewlist=dockedlist] #Statusbar #Tray > div
-{
-	display: inline-block;
-}
-
 html body[viewlist=docked] #Statusbar
 {
 	height: 0;
@@ -3312,6 +3892,19 @@ html #DockWindowList .Task.Directory
 	box-sizing: border-box;
 }
 
+html #Tray
+{
+	white-space: nowrap;
+	position: relative;
+	position: absolute;
+	top: 0;
+}
+
+html #Tray > div
+{
+	display: inline-block;
+}
+
 .DockMenu
 {
 	position: absolute;
@@ -3365,7 +3958,7 @@ html #DockWindowList .Task.Directory
 	margin-right: 5px;
 }
 
-.DockMenu .DockMenuItem.Directory img
+.DockMenu .DockMenuItem.Directory > img
 {
 	position: relative;
 	top: -2px;
@@ -3398,16 +3991,18 @@ html #DockWindowList .Task.Directory
 
 .Right .DockMenu .DockMenuItem.Directory:after
 {
-	content: "<";
+	font-family: FontAwesome;
+	content: "\f0d9";
 	float: left;
 }
 
 .DockMenu .DockMenuItem.Directory:after
 {
-	content: ">";
+	font-family: FontAwesome;
+	content: "\f0da";
 	display: block;
 	float: right;
-	margin: 0 5px 0 0;
+	margin: 4px 5px 0 0;
 }
 
 .DockMenu .DockMenuItem.Directory > .DockSubMenu
@@ -3419,12 +4014,15 @@ html #DockWindowList .Task.Directory
 	top: 0;
 	width: 220px;
 	background: rgba(0,0,0,0.8);
+	transition: opacity 0.25s;
+	opacity: 0;
 }
 
 .DockMenu .DockMenuItem.Directory.Over > .DockSubMenu,
 .DockMenu .DockMenuItem.Directory.Active > .DockSubMenu
 {
 	pointer-events: all;
+	opacity: 1;
 	visibility: visible;
 }
 
@@ -3478,47 +4076,6 @@ html #DockWindowList .Task.Directory
 	background: #2F669F;
 }
 
-#Screens .View
-{
-	position: absolute;
-	transition: opacity 0.2s;
-	opacity: 1;
-}
-
-#Screens .View[moving]
-{
-	transition: none;
-}
-
-#Screens .View:not([moving]):not(.Opening):not(.Opened)
-{
-	transition: opacity,width,height 0.2s,0.2s,0.2s;
-}
-
-#Screens .View.Opening
-{
-	opacity: 0;
-}
-
-#Screens .View > .Content > iframe
-{
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	border: 0;
-	margin: 0;
-	outline: none;
-	transition: opacity 0.2s ease-in;
-	opacity: 1;
-}
-
-#Screens .View > .Content > iframe.Loading
-{
-	opacity: 0;
-}
-
 .Screen > div
 {
 	z-index: 1;
@@ -3529,8 +4086,8 @@ html #DockWindowList .Task.Directory
 	position: absolute;
 	top: 50%; 
 	left: 50%;
-	-webkit-transform: translateX(-50%) translateY(-50%);
-	transform: translateX(-50%) translateY(-50%);
+	-webkit-transform: translate3d(-50%,-50%,0);
+	transform: translate3d(-50%,-50%,0);
 	min-width: 100%; 
 	min-height: 100%; 
 	width: auto; 
@@ -3565,9 +4122,10 @@ html #DockWindowList .Task.Directory
 
 /* Loggedin state */
 
-.Inside #DeepestField > div
+.Inside #DeepestField
 {
-	z-index: 1;
+	pointer-events: none;
+	opacity: 0;
 }
 
 .Inside #DeepestCanvas
@@ -3673,7 +4231,7 @@ html #DockWindowList .Task.Directory
 }
 
 #DeepestField > div > #Notifications,
-#DeepestField > div > #Tasks,
+#DeepestField > div > #TasksList,
 #DeepestField > div > #Capabilities,
 #DeepestField > div > #Netconnections,
 #DeepestField > div > #FNetContent
@@ -3911,6 +4469,54 @@ textarea.InputHeight, input.InputHeight
 	padding: 6px;
 }
 
+/* Color picker ------------------------------------------------------------- */
+
+
+.ColorPickerGUI .ColorPickerController
+{
+	width: 30px;
+	height: 30px;
+	border-radius: 30px;
+	border: 2px solid white;
+	background-color: transparent;
+	position: absolute;
+	top: -15px;
+	left: -15px;
+}
+
+.ColorPickerGUI .DiaColors
+{
+	overflow: hidden;
+}
+
+.ColorPickerGUI .ColorPickerController:after
+{
+	content: " ";
+	display: block;
+	position: absolute;
+	top: 14px;
+	left: 14px;
+	width: 2px;
+	height: 2px;
+	border-radius: 4px;
+	background-color: white;
+}
+
+
+.ColorPickerGUI .ColorPickerShadeControl
+{
+	position: absolute;
+	top: 0;
+	right: 0;
+	width: 30px;
+	height: 15px;
+	border-radius: 3px;
+	border: 0;
+	background-color: white;
+	filter: drop-shadow(0px 0px 2px rgba(0,0,0,0.5));
+}
+
+
 /* Ho hoe ------------------------------------------------------------------- */
 
 blockquote.Code
@@ -4103,6 +4709,113 @@ div.Orange, button.Orange
     text-align: justify;
     font-size: 10px;
     overflow: hidden;
+}
+
+/* File upload adjustments */
+
+#fileUpload .FileUpload
+{
+	position: relative;
+}
+
+.UploadFeedbackContainer.Busy input,
+.UploadFeedbackContainer.Busy button
+{
+	pointer-events: none;
+	opacity: 0.8;
+	cursor: not-allowed;
+}
+
+.UploadFeedbackContainer.Busy input[type=file]
+{
+	display: none;
+}
+
+.UploadFeedbackContainer button.fa-upload
+{
+	transition: opacity 0.2s;
+	opacity: 1;
+}
+
+.UploadFeedbackContainer.Busy button.fa-upload
+{
+	opacity: 0.5;
+}
+
+.UploadFeedbackContainer.Busy button.fa-upload
+{
+	display: none;
+}
+
+.ProgressReport
+{
+	display: none;
+	opacity: 0;
+	transition: opacity 0.2s;
+}
+
+.UploadFeedbackContainer.Busy .ProgressReport
+{
+	display: block;
+	opacity: 1;
+	position: relative;
+	width: 60px;
+	margin: auto;
+	height: 40px;
+	line-height: 40px;
+	text-align: center;
+	left: 15px;
+}
+
+.ProgressReport .Progress
+{
+	position: absolute;
+	display: block;
+	font-size: 30px;
+	animation: uprotate 2s infinite linear;
+}
+
+.ProgressReport .Progress:after
+{
+	content: "\f1ce";
+	font-family: fontawesome;
+	display: block;
+}
+
+@keyframes uprotate
+{
+	0% { transform: rotateZ(0deg); }
+	100% { transform: rotateZ(360deg); }
+}
+
+.FileUpload > input
+{
+	opacity: 0;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+.FileUpload .UploadButton 
+{
+	width: 100%;
+	height: 32px;
+	position: absolute;
+	top: 0;
+	left: 0;
+	pointer-events: none;
+}
+
+.FileUpload .UploadButton > .Button
+{
+	pointer-events: none;
+	width: 100%;
+	box-sizing: border-box;
+}
+
+#fileUpload #uploadFileFileDisplay
+{
+	display:block;
+	padding-top:12px;
 }
 
 /* Responsive page layout */

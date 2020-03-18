@@ -166,28 +166,41 @@ void WorkerThread( void *w )
 
 		if( FRIEND_MUTEX_LOCK( &(wrk->w_Mut) ) == 0 )
 		{
+			DEBUG("W_STATE_WAITING\n");
 			wrk->w_State = W_STATE_WAITING;
+			FRIEND_MUTEX_UNLOCK( &(wrk->w_Mut) );
+		}
 
+		if( FRIEND_MUTEX_LOCK( &(wrk->w_Mut) ) == 0 )
+		{
+			DEBUG("Before condition\n");
 			pthread_cond_wait( &(wrk->w_Cond), &(wrk->w_Mut) );
-
+			DEBUG("Got cond call\n");
 			wrk->w_State = W_STATE_COMMAND_CALLED;
 			FRIEND_MUTEX_UNLOCK( &(wrk->w_Mut) );
 			
 			if( wrk->w_Function != NULL && wrk->w_Data != NULL )
 			{
 				wrk->w_Function( wrk->w_Data );
+				DEBUG("Function finished\n");
 
 				if( FRIEND_MUTEX_LOCK( &(wrk->w_Mut) ) == 0 )
 				{
+					
 					wrk->w_Data = NULL;
 					wrk->w_Function = NULL;
 					
+ 					DEBUG("W_STATE_COMMAND_CALLED\n");
 					FRIEND_MUTEX_UNLOCK( &(wrk->w_Mut) );				
 				}
 			}
 			else
 			{
-				//FERROR("Function is not set\n");
+				if( FRIEND_MUTEX_LOCK( &(wrk->w_Mut) ) == 0 )
+				{
+					DEBUG("W_STATE_COMMAND_CALLED\n");
+					FRIEND_MUTEX_UNLOCK( &(wrk->w_Mut) );				
+				}
 			}
 		}
 		else
@@ -201,7 +214,7 @@ void WorkerThread( void *w )
 		}
 
 		// Let others come to..
-		usleep( 100 );
+		usleep( 10 );
 	}
 	
 	wrk->w_Function = NULL;

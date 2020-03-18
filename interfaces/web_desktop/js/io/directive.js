@@ -10,9 +10,57 @@
 
 var _appNum = 1;
 
+var _executionQueue = {};
+
+function RemoveFromExecutionQueue( app )
+{
+	try
+	{
+		var out = {};
+		for( var a in _executionQueue )
+			if( a != app )
+				out[ a ] = true;
+		_executionQueue = out;
+	}
+	// Something went wrong, flush
+	catch( e )
+	{
+		console.log( 'Problem!' );
+		mobileDebug( 'Something failed with execution queue.', true );
+		_executionQueue = {};
+	}
+}
+
 // Load a javascript application into a sandbox
 function ExecuteApplication( app, args, callback )
 {
+	var appName = app;
+	if( app.indexOf( ':' ) > 0 )
+	{
+		if( app.indexOf( '/' ) > 0 )
+			appName = app.split( '/' ).pop();
+		else appName = app.split( ':' ).pop();
+	}
+	
+	// You need to wait with opening apps until they are loaded by app name
+	if( _executionQueue[ appName ] )
+	{
+		callback( false, { response: false, message: 'Already run.', data: 'executed' } );
+		return;
+	}
+
+	// Register that we are executing
+	_executionQueue[ appName ] = true;
+
+	if( isMobile )
+	{
+		Workspace.goToMobileDesktop();
+		if( Workspace.widget )
+			Workspace.widget.slideUp();
+		if( Workspace.mainDock )
+			Workspace.mainDock.closeDesklet();
+	}
+	
 	if( args )
 	{ 
 		Workspace.lastLaunchedAppArgs = args; 
@@ -27,8 +75,11 @@ function ExecuteApplication( app, args, callback )
 	mousePointer.clear();
 
 	// Check if the app called is found in the singleInstanceApps array
-	if( Friend.singleInstanceApps[ app ] )
+	if( Friend.singleInstanceApps[ appName ] )
 	{
+		// Clean blocker
+		RemoveFromExecutionQueue( appName );
+		
 		var msg = {
 			command: 'cliarguments',
 			args: args
@@ -39,12 +90,40 @@ function ExecuteApplication( app, args, callback )
 			msg.type = 'callback';
 		}
 		// If it is found, send the message directly to the app instead of relaunching
-		Friend.singleInstanceApps[ app ].contentWindow.postMessage( JSON.stringify( msg ), '*' );
-		for( var a in Friend.singleInstanceApps[ app ].windows )
+		Friend.singleInstanceApps[ appName ].contentWindow.postMessage( JSON.stringify( msg ), '*' );
+		for( var a in Friend.singleInstanceApps[ appName ].windows )
 		{
-			_WindowToFront( Friend.singleInstanceApps[ app ].windows[ a ].content );
+			_ActivateWindow( Friend.singleInstanceApps[ appName ].windows[ a ]._window.parentNode );
+			_WindowToFront( Friend.singleInstanceApps[ appName ].windows[ a ]._window.parentNode );
+			callback( false, { response: false, message: 'Already run.', data: 'executed' } );
+			return;
 		}
+		callback( false, { response: false, message: 'Already run.', data: 'executed' } );
 		return;
+	}
+	// Only allow one app instance in mobile!
+	else if( isMobile )
+	{
+		for( var a in Workspace.applications )
+		{
+			if( Workspace.applications[ a ].applicationName == appName )
+			{
+				var app = Workspace.applications[ a ];
+				for( var z in app.windows )
+				{
+					_ActivateWindow( app.windows[ z ]._window.parentNode );
+					_WindowToFront( app.windows[ z ]._window.parentNode );
+					
+					// Clean blocker
+					RemoveFromExecutionQueue( appName );
+					
+					// Tell that we didn't launch
+					if( callback )
+						callback( false, { response: false, message: 'Already run.', data: 'executed' } );
+					return;
+				}
+			}
+		}
 	}
 
 	// Common ones
@@ -89,6 +168,8 @@ function ExecuteApplication( app, args, callback )
 	// TODO: Make this safe!
 	if( app.indexOf( ':' ) > 0 && app.indexOf( '.jsx' ) > 0 )
 	{
+		// Remove from execution queue
+		RemoveFromExecutionQueue( appName );
 		return ExecuteJSXByPath( app, args, callback, undefined );
 	}
 	else if( app.indexOf( ':' ) > 0 )
@@ -99,7 +180,7 @@ function ExecuteApplication( app, args, callback )
 	// 1. Ask about application.................................................
 	var m = new Module( 'system' );
 	m.onExecuted = function( r, d )
-	{
+	{	
 		// Get data from Friend Core
 		var conf = false;
 		try
@@ -111,14 +192,21 @@ function ExecuteApplication( app, args, callback )
 			//
 		}
 
+		// Remove blocker
+		RemoveFromExecutionQueue( appName );
+		// console.log( 'Test3: Executed. Removing appqueue: ' + appName );
+		
 		if( r == 'activate' )
 		{
 			ActivateApplication( app, conf );
 			if( callback ) callback( false );
+			
 			return false;
 		}
 		else if( r != 'ok' )
 		{
+			// console.log( 'Test2: Executing app Was not ok.' );
+			
 			if( r == 'notinstalled' || ( conf && conf.response == 'not installed' ) )
 			{
 				var hideView = false;
@@ -188,6 +276,17 @@ function ExecuteApplication( app, args, callback )
 				Ac2Alert( i18n( 'application_not_found' ) );
 			}
 			if( callback ) callback( false );
+			// console.log( 'Test2: Dead.' );
+			
+			// Clean up single instance
+			var o = {};
+			for( var a in Friend.singleInstanceApps )
+				if( a != appName )
+					o[ a ] = Friend.singleInstanceApps[ a ];
+			Friend.singleInstanceApps = o;
+			// Kill app if it is there
+			KillApplication( appName );
+			
 			return false;
 		}
 
@@ -202,6 +301,7 @@ function ExecuteApplication( app, args, callback )
 				}
 				Ac2Alert( 'Can not run v0 applications.' );
 				if( callback ) callback( false );
+				
 				return false;
 			}
 
@@ -218,13 +318,13 @@ function ExecuteApplication( app, args, callback )
 				filepath = '/webclient/apps/' + app + '/';
 
 			// Security domain
-			var applicationId = md5( app + '-' + (new Date()).getTime() );
+			var applicationId = md5( app + '-' + ( new Date() ).getTime() );
 			SubSubDomains.reserveSubSubDomain( applicationId );
 			var sdomain = GetDomainFromConf( conf, applicationId );
 			
 			// Open the Dormant drive of the application
 			var drive = null;
-			if ( conf.DormantDisc )
+			if( conf.DormantDisc )
 			{
 				var options =
 				{
@@ -244,13 +344,20 @@ function ExecuteApplication( app, args, callback )
 			var ifr = document.createElement( 'iframe' );
 			// Only sandbox when it's on another domain
 			if( document.location.href.indexOf( sdomain ) != 0 )
-				ifr.setAttribute( 'sandbox', 'allow-forms allow-scripts' );
+				ifr.setAttribute( 'sandbox', DEFAULT_SANDBOX_ATTRIBUTES );
 			ifr.path = conf.Path;
 
 			// Set the conf
 			ifr.conf = conf && conf.ConfFilename ? conf.ConfFilename : false;
 			ifr.config = conf ? conf : false; // Whole object
 			ifr.drive = drive;
+			
+			// Set startupsequence flag on apps that are launched this way
+			// Except the first app which will operate like normal
+			if( window.ScreenOverlay && ScreenOverlay.visibility && ( ScreenOverlay.launchIndex > 0 || Workspace.applications.length > 0 ) )
+			{
+				ifr.startupsequence = true;
+			}
 
 			// Proper way to run by conf.init
 			if( conf.Init )
@@ -263,13 +370,21 @@ function ExecuteApplication( app, args, callback )
 				else
 				{
 					var sid = Workspace.sessionId && Workspace.sessionId != 'undefined' ?
-						Workspace.sessionId : Workspace.conf.authId;
-					var svalu = sid ? Workspace.sessionId : Workspace.conf.authId;
+						Workspace.sessionId : ( Workspace.conf && Workspace.conf.authid ? Workspace.conf.authId : '');
+					var svalu = sid ? Workspace.sessionId :( Workspace.conf && Workspace.conf.authid ? Workspace.conf.authId : '');
 					var stype = sid ? 'sessionid' : 'authid';
-					console.log( 'Launching with stype: ' + stype + ' and svalu: ' + svalu + ' and session ' + Workspace.sessionId );
-					ifr.src = sdomain + '/system.library/module?module=system&' +
+					
+					// Quicker ajax implementation
+					var j = new cAjax();
+					j.open( 'POST', '/system.library/module?module=system&' +
 						stype + '=' + svalu + '&command=launch&app=' +
-						app + '&friendup=' + Doors.runLevels[0].domain;
+						app + '&friendup=' + escape( Doors.runLevels[0].domain ), true );
+					j.onload = function()
+					{	
+						ws = this.rawData.split( 'src="/webclient/js/apps/api.js"' ).join( 'src="' + _applicationBasics.apiV1 + '"' );
+						ifr.src = URL.createObjectURL(new Blob([ws],{type:'text/html'}));
+					}
+					j.send();
 				}
 			}
 			else
@@ -281,8 +396,10 @@ function ExecuteApplication( app, args, callback )
 			ifr.applicationName = app.indexOf( ' ' ) > 0 ? app.split( ' ' )[0] : app;
 			ifr.userId = Workspace.userId;
 			ifr.username = Workspace.loginUsername;
+			ifr.userLevel = Workspace.userLevel;
 			ifr.workspace = workspace;
 			ifr.applicationId = applicationId;
+			ifr.workspaceMode = Workspace.workspacemode;
 			ifr.id = 'sandbox_' + ifr.applicationId;
 			ifr.authId = conf.AuthID;
 			ifr.applicationNumber = _appNum++;
@@ -291,6 +408,9 @@ function ExecuteApplication( app, args, callback )
 			// Quit the application
 			ifr.quit = function( level )
 			{
+				// Clean blocker
+				RemoveFromExecutionQueue( appName );
+				
 				// Check vr
 				if( window.FriendVR )
 				{
@@ -301,6 +421,7 @@ function ExecuteApplication( app, args, callback )
 				{
 					for( var a in this.windows )
 					{
+						this.windows[a].quitting = true;
 						this.windows[a].close( level );
 					}
 				}
@@ -387,6 +508,20 @@ function ExecuteApplication( app, args, callback )
 				}
 				// Cleans subSubDomains allocation
 				SubSubDomains.freeSubSubDomain( this.applicationId );
+				
+				// Silently close message port
+				ApplicationMessagingNexus.close( this.applicationId );
+			}
+			
+			ifr.sendMessage = function( msg )
+			{
+				if( this.contentWindow )
+				{
+					msg.applicationId = this.applicationId;
+					msg.applicationName = this.applicationName;
+					amsg = JSON.stringify( msg );
+					this.contentWindow.postMessage( amsg, '*' );
+				}
 			}
 
 			// FIXME: Francois here we close the iframe!
@@ -406,14 +541,18 @@ function ExecuteApplication( app, args, callback )
 			// Register application
 			ifr.onload = function()
 			{
+				// Clean blocker
+				RemoveFromExecutionQueue( appName );
+				
 				// Make sure pickup items are cleared
 				mousePointer.clear();
 				
-				var cid = addWrapperCallback( function()
+				var cid = addWrapperCallback( function( data )
 				{
 					if( callback )
 					{
-						callback( "\n", { response: 'Executable has run.' } );
+						callback( "\n", { response: 'Executable has run.', result: data == 'registered' } );
+						callback = null;
 					}
 				} );
 
@@ -432,11 +571,14 @@ function ExecuteApplication( app, args, callback )
 					command: 'register',
 					applicationId: ifr.applicationId,
 					applicationName: ifr.applicationName,
+					workspaceMode: Workspace.workspacemode,
 					userId: ifr.userId,
+					userLevel: ifr.userLevel,
 					username: ifr.username,
 					authId: ifr.authId,
 					args: oargs,
 					workspace: workspace,
+					dosDrivers: Friend.dosDrivers,
 					locale: Workspace.locale,
 					theme: Workspace.theme,
 					themeData: Workspace.themeData,
@@ -444,7 +586,8 @@ function ExecuteApplication( app, args, callback )
 					filePath: sdomain + filepath,
 					domain:   sdomain,
 					registerCallback: cid,
-					clipboard: Friend.clipboard
+					clipboard: Friend.clipboard,
+					cachedAppData: _applicationBasics
 				};
 				if( conf.State ) o.state = conf.State;
 
@@ -466,10 +609,14 @@ function ExecuteApplication( app, args, callback )
 			// Add application
 			Workspace.applications.push( ifr );
 			
-			if( callback )
+			// Five second timeout to receive a response
+			setTimeout( function()
 			{
-				callback( false );
-			}
+				if( callback )
+				{
+					callback( false );
+				}
+			}, 5000 );
 			
 			// Register this app as the last executed
 			// Register this app as the last executed
@@ -482,12 +629,21 @@ function ExecuteApplication( app, args, callback )
 		else
 		{
 			if( callback ) callback( "\n", { response: 'Executable has run.' } );
+			
+			// Clean blocker
+			RemoveFromExecutionQueue( appName );
 		}
 	}
 	var eo = { application: app, args: args };
 	if( Workspace.conf && Workspace.conf.authid )
 		eo.authid = Workspace.conf.authid;
+	m.onQueue = function()
+	{
+		// Clean blocker
+		RemoveFromExecutionQueue( appName );
+	}
 	m.execute( 'friendapplication', eo );
+	// console.log( 'Test3: Executing application: ' + app );
 }
 
 function FlushSingleApplicationLock( app )
@@ -503,6 +659,11 @@ function FlushSingleApplicationLock( app )
 // Kill an app by name or PID
 KillApplication = function ( n, level )
 {
+	if( isMobile )
+	{
+		Workspace.goToMobileDesktop();
+	}
+	
 	var killed = 0;
 	if( !level ) level = 1;
 	if( typeof( n ) == 'number' )
@@ -559,6 +720,11 @@ KillApplication = function ( n, level )
 
 function KillApplicationById( appid, level )
 {
+	if( isMobile )
+	{
+		Workspace.goToMobileDesktop();
+	}
+	
 	var killed = 0;
 	for( var a = 0; a < Workspace.applications.length; a++ )
 	{
@@ -581,6 +747,7 @@ function ActivateApplication( app, conf )
 	if( conf && conf.type == 'disk' )
 	{
 		type = 'disk';
+		
 		// Defaults
 		conf.Permissions = [
 			'Module System',
@@ -618,7 +785,9 @@ function ActivateApplication( app, conf )
 		m.onExecuted = function( e, da )
 		{
 			var perms = '';
+			var permissions = [];
 			var filesystemoptions = '';
+			
 			if( conf.Permissions )
 			{
 				for( var a = 0; a < conf.Permissions.length; a++ )
@@ -633,18 +802,21 @@ function ActivateApplication( app, conf )
 							perms += '<select><option value="all">' +
 								i18n( 'all_filesystems' ) + '</option>' + filesystemoptions + '</select>';
 							perms += '.</p>';
+							permissions.push( conf.Permissions[a] );
 							break;
 						case 'module':
 							perms += '<p><input type="checkbox" class="permission_' + (a+1) + '" checked="checked"/> ';
 							perms += '<label>' + i18n('grant_module_access' ) + '</label> ';
 							perms += '<strong>' + row[1].toLowerCase() + '</strong>.';
 							perms += '</p>';
+							permissions.push( conf.Permissions[a] );
 							break;
 						case 'service':
 							perms += '<p><input type="checkbox" class="permission_' + (a+1) + '" checked="checked"/> ';
 							perms += '<label>' + i18n('grant_service_access' ) + '</label> ';
 							perms += '<strong>' + row[1].toLowerCase() + '</strong>.';
 							perms += '</p>';
+							permissions.push( conf.Permissions[a] );
 							break;
 						default:
 							continue;
@@ -653,7 +825,7 @@ function ActivateApplication( app, conf )
 			}
 
 			w.setContent( d.split( '{permissions}' ).join ( perms ) );
-
+			
 			// Check the security domains
 			var domains = [];
 			if( e == 'ok' )
@@ -691,14 +863,14 @@ function ActivateApplication( app, conf )
 				{
 					abtn.onclick = function()
 					{
-						ExecuteApplicationActivation( app, w, conf.Permissions );
+						ExecuteApplicationActivation( app, w, ( permissions ? permissions : conf.Permissions ) );
 					}
 				}
 			}
 			if( hideView )
 			{
 				//console.log('view is hidden... == trusted app == auto activate')
-				ExecuteApplicationActivation( app, w, conf.Permissions );
+				ExecuteApplicationActivation( app, w, ( permissions ? permissions : conf.Permissions ) );
 			}
 		}
 		m.execute( 'securitydomains' );
@@ -746,7 +918,7 @@ function ExecuteApplicationActivation( app, win, permissions, reactivation )
 	var pelement = win.getWindowElement();
 	if( !pelement ) 
 	{
-		console.log( 'No parent element: ', win, win.windowObject );
+		//console.log( 'No parent element: ', win, win.windowObject );
 		return;
 	}
 	var eles = pelement.getElementsByTagName( 'input' );
@@ -756,7 +928,7 @@ function ExecuteApplicationActivation( app, win, permissions, reactivation )
 	{
 		for( var a = 0, i = 0; a < eles.length, i < permissions.length; a++ )
 		{
-			if( eles[a].getAttribute( 'type' ) != 'checkbox' )
+			if( !eles[a] || !eles[a].getAttribute( 'type' ) || eles[a].getAttribute( 'type' ) != 'checkbox' )
 				continue;
 			// Ah, we've got a permission setting
 			if( eles[a].className.substr( 0, 10 ) == 'permission' )
@@ -861,22 +1033,28 @@ function ExecuteApplicationActivation( app, win, permissions, reactivation )
 // Do it by path!
 function ExecuteJSXByPath( path, args, callback, conf )
 {
+	if( !path ) return;
+	var app = path.split( ':' )[1];
+	if( app.indexOf( '/' ) > 0 )
+	{
+		app = app.split( '/' );
+		app = app[app.length-1];
+	}
 	var f = new File( path );
 	f.onLoad = function( data )
 	{
 		if( data )
 		{
-			console.log( 'Here\'s the response: ' + data );
 			// An error?
 			if ( data.indexOf( '404 - File not found!' ) < 0 )
 			{
-				var app = path.split( ':' )[1];
-				if( app.indexOf( '/' ) > 0 )
+				var r = ExecuteJSX( data, app, args, path, function()
 				{
-					app = app.split( '/' );
-					app = app[app.length-1];
-				}
-				var r = ExecuteJSX( data, app, args, path, callback, conf ? conf.ConfFilename : false );
+					if( callback )
+						callback();
+					// Clean blocker
+					RemoveFromExecutionQueue( app );
+				}, conf ? conf.ConfFilename : false );
 				// Uncommented running callback, it is already running in executeJSX!
 				// Perhaps 'r' should tell us if it was run, and then run it if not?
 				//if( callback ) callback( true );
@@ -888,6 +1066,8 @@ function ExecuteJSXByPath( path, args, callback, conf )
 			console.log( 'Failed to load data: ', data, path );
 		}
 		if( callback ) callback( false );
+		// Clean blocker
+		RemoveFromExecutionQueue( app );
 	};
 	f.load();
 }
@@ -896,6 +1076,9 @@ function ExecuteJSX( data, app, args, path, callback, conf )
 {
 	if( data.indexOf( '{' ) < 0 ) return;
 
+	// Remove from execution queue
+	RemoveFromExecutionQueue( app );
+	
 	// Only run jsx after refreshing desktop to get mounted drives
 	Workspace.refreshDesktop( function()
 	{
@@ -923,7 +1106,7 @@ function ExecuteJSX( data, app, args, path, callback, conf )
 
 		// Load application into a sandboxed iframe
 		var ifr = document.createElement( 'iframe' );
-		ifr.setAttribute( 'sandbox', 'allow-same-origin allow-forms allow-scripts' );
+		ifr.setAttribute( 'sandbox', DEFAULT_SANDBOX_ATTRIBUTES );
 		ifr.path = '/webclient/jsx/';
 
 		args = typeof( args ) != 'string' ? '' : args;
@@ -965,19 +1148,35 @@ function ExecuteJSX( data, app, args, path, callback, conf )
 				if( stype == 'authid')
 					extra = '&theme=borderless';
 
-				ifr.src = dom + '/system.library/module/?module=system&command=sandbox' +
+				// Quicker ajax implementation
+				var j = new cAjax();
+				j.open( 'POST', '/system.library/module/?module=system&command=sandbox' +
 					'&' + stype + '=' + svalu +
-					'&conf=' + conf + '&' + ( args ? ( 'args=' + args ) : '' ) + extra;
+					'&conf=' + conf + '&' + ( args ? ( 'args=' + args ) : '' ) + extra, true );
+				j.onload = function()
+				{
+					ws = this.rawData.split( 'src="/webclient/js/apps/api.js"' ).join( 'src="' + _applicationBasics.apiV1 + '"' );
+					ifr.onload = ifronload;
+					ifr.src = URL.createObjectURL( new Blob([ ws ],{ type: 'text/html' } ) );
+				}
+				j.send();
+
 				ifr.conf = confObject;
 			}
 			// Just give a dumb sandbox
-			else ifr.src = '/webclient/sandboxed.html?' + ( args ? ( 'args=' + args ) : '' );
+			else 
+			{
+				ifr.src = '/webclient/sandboxed.html?' + ( args ? ( 'args=' + args ) : '' );
+				ifr.onload = ifronload;
+			}
 
 			// Register name and ID
 			ifr.applicationName = app;
 			ifr.applicationNumber = _appNum++;
 			ifr.applicationId = app + '-' + (new Date()).getTime();
+			ifr.workspaceMode = Workspace.workspacemode;
 			ifr.userId = Workspace.userId;
+			ifr.userLevel = Workspace.userLevel;
 			ifr.username = Workspace.loginUsername;
 			ifr.applicationType = 'jsx';
 			if( sid ) 
@@ -1050,6 +1249,30 @@ function ExecuteJSX( data, app, args, path, callback, conf )
 					};
 					this.contentWindow.postMessage( JSON.stringify( o ), '*' );
 				}
+				
+				// Close file dialog memory
+				// TODO: Reenable if needed
+				/*var out = [];
+				for( var a in _dialogStorage )
+				{
+					if( a != ifr.applicationName )
+						out[ a ] = _dialogStorage[ a ];
+				}
+				_dialogStorage = out; */
+				
+				// Silently close message port
+				ApplicationMessagingNexus.close( this.applicationId );
+			}
+			
+			ifr.sendMessage = function( msg )
+			{
+				if( this.contentWindow )
+				{
+					msg.applicationId = this.applicationId;
+					msg.applicationName = this.applicationName;
+					amsg = JSON.stringify( msg );
+					this.contentWindow.postMessage( amsg, '*' );
+				}
 			}
 
 			// Close method
@@ -1064,7 +1287,7 @@ function ExecuteJSX( data, app, args, path, callback, conf )
 			}
 
 			// Register application
-			ifr.onload = function()
+			var ifronload = function()
 			{
 				try
 				{
@@ -1097,24 +1320,27 @@ function ExecuteJSX( data, app, args, path, callback, conf )
 						}
 					} );
 
+					// Send initiator to app
 					var msg = {
 						command:          'initappframe',
 						base:             '/',
 						applicationId:    ifr.applicationId,
 						userId:           ifr.userId,
+						userLevel:        ifr.userLevel,
 						username:         ifr.username,
 						theme:            Workspace.theme,
 						themeData:        Workspace.themeData,
-						workspaceMode:    Workspace.mode,
+						workspaceMode:    Workspace.workspacemode,
 						locale:           Workspace.locale,
 						filePath:         '/webclient/jsx/',
 						appPath:          dpath ? dpath : '',
 						authId:           ifr.authId, // JSX may have authid
 						sessionId:        ifr.sessionId, // or JSX has sessionid
-						origin:           document.location.href,
+						origin:           '*',//document.location.href,
 						viewId:           false,
 						registerCallback: cid,
 						clipboard:        Friend.clipboard,
+						cachedAppData:    _applicationBasics,
 						args:			  args
 					};
 
@@ -1192,9 +1418,13 @@ function AttachAppSandbox( ifr, path )
 	x.appendChild( img );
 	d.appendChild( x );
 
-	// On click, quit with force!
-	x.onclick = function()
-	{ ifr.quit( 1 ); }
+	var b = document.createElement( 'div' );
+	b.className = 'CloseButton';
+	b.onmousedown = function()
+	{
+		ifr.quit( 1 );
+	}
+	d.appendChild( b );
 
 	ge( 'Tasks' ).appendChild( d );
 
@@ -1223,7 +1453,9 @@ function AuthorizePermission( app, permissions )
 	f.onLoad = function( d )
 	{
 		var perms = '';
+		var pems = [];
 		var filesystemoptions = '';
+		
 		if( permissions )
 		{
 			for( var a = 0; a < permissions.length; a++ )
@@ -1238,18 +1470,21 @@ function AuthorizePermission( app, permissions )
 						perms += '<select><option value="all">' +
 							i18n( 'all_filesystems' ) + '</option>' + filesystemoptions + '</select>';
 						perms += '.</p>';
+						pems.push( permissions[a] );
 						break;
 					case 'module':
 						perms += '<p><input type="checkbox" class="permission_' + (a+1) + '" checked="checked"/> ';
 						perms += '<label>' + i18n('grant_module_access' ) + '</label> ';
 						perms += '<strong>' + row[1].toLowerCase() + '</strong>.';
 						perms += '</p>';
+						pems.push( permissions[a] );
 						break;
 					case 'service':
 						perms += '<p><input type="checkbox" class="permission_' + (a+1) + '" checked="checked"/> ';
 						perms += '<label>' + i18n('grant_service_access' ) + '</label> ';
 						perms += '<strong>' + row[1].toLowerCase() + '</strong>.';
 						perms += '</p>';
+						pems.push( permissions[a] );
 						break;
 					default:
 						continue;
@@ -1270,7 +1505,7 @@ function AuthorizePermission( app, permissions )
 		{
 			abtn.onclick = function()
 			{
-				ExecuteApplicationActivation( app, w, conf.Permissions, 'reactivate' );
+				ExecuteApplicationActivation( app, w, ( pems ? pems : conf.Permissions ), 'reactivate' );
 			}
 		}
 	}
@@ -1310,7 +1545,7 @@ SubSubDomains =
 
 	initSubSubDomains: function()
 	{
-		if ( this.initialized )
+		if( this.initialized )
 			return;
 
 		var self = this;
@@ -1455,3 +1690,4 @@ SubSubDomains =
 		return false;
  	}
 }
+

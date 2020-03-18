@@ -33,6 +33,10 @@
 #include <application/applicationlibrary.h>
 #include <db/sqllib.h>
 #include <config/properties.h>
+#include <util/base64.h>
+
+// memory check
+#include <mcheck.h>
 
 char CRASH_LOG_FILENAME[ 92 ];
 
@@ -87,14 +91,69 @@ void InterruptSignalHandler(int signum)
  * @return 0 when success, otherwise error number
  * @sa SystemInit, FriendCoreManagerNew, SetFriendCoreManager, FriendCoreManagerRun
  */
-int main( int argc __attribute__((unused)), char *argv[])
+int main( int argc, char *argv[])
 {
+	int i;
+	int mcheckOption = 0;
+	
+	for( i=0 ; i < argc ; i++ )
+	{
+		if( strcmp( argv[i], "--mcheck" ) == 0 )
+		{
+			mcheckOption = 1;
+		}
+		else if( strcmp( argv[i], "--mcheck_pedantic" ) == 0 )
+		{
+			mcheckOption = 2;
+		}
+		else if( strcmp( argv[i], "--mcheck_check_all" ) == 0 )
+		{
+			mcheckOption = 3;
+		}
+		else if( strcmp( argv[i], "--mcheck_trace" ) == 0 )
+		{
+			mtrace();
+		}
+	}
+	
+	switch( mcheckOption )
+	{
+		case 1:
+			if( mcheck( NULL ) == 0 )
+			{
+				DEBUG("MCHECK: initialized!\n");
+			}
+			else
+			{
+				DEBUG("MCHECK: NOT initialized!\n");
+			}
+			break;
+		case 2:
+			if( mcheck_pedantic( NULL ) == 0 )
+			{
+				DEBUG("MCHECK_PEDANTIC: initialized!\n");
+			}
+			else
+			{
+				DEBUG("MCHECK_PEDANTIC: NOT initialized!\n");
+			}
+			break;
+		case 3:
+			mcheck_check_all( );
+			
+			DEBUG("MCHECK_ALL: initialized!\n");
+			
+			break;
+	}
+	
 	_program_name = argv[0];
 	// Catch ctrl-c to gracefully shut down
 	signal( SIGINT, InterruptSignalHandler );
 	signal( SIGKILL, InterruptSignalHandler );
 	signal( SIGSEGV, crash_handler);
 	signal( SIGABRT, crash_handler);
+	
+	build_decoding_table();
 
 	srand( time( NULL ) );
 	
@@ -144,7 +203,7 @@ int main( int argc __attribute__((unused)), char *argv[])
 	LogNew("friend_core_log", "log.cfg", 1, FLOG_LIVE, FLOG_LIVE, 524288000 );
 
 	LOG( FLOG_INFO, "Core started log\n" );
-
+	
 	if( ( SLIB =  SystemInit() ) != NULL ) // (struct SystemLibrary *)LibraryOpen( "system.library", 0 ) ) != NULL )
 	{
 		SLIB->SystemInitExternal( SLIB );
@@ -157,6 +216,7 @@ int main( int argc __attribute__((unused)), char *argv[])
 	}
 	else
 	{
+		unsetenv("FRIEND_HOME");
 		Log( FLOG_PANIC, "Cannot open 'system.library'\n");
 		FFree( envvar );
 		FFree( cwd );
@@ -164,11 +224,14 @@ int main( int argc __attribute__((unused)), char *argv[])
 		return 1;
 	}
 
+	unsetenv("FRIEND_HOME");
 	if( envvar != NULL )
 	{
 		FFree( envvar );
 	}
 	FFree( cwd );
+	
+	base64_cleanup();
 
 	return 0;
 }

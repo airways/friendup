@@ -1,24 +1,25 @@
 /*
  * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2010-2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
- *
- * included from libwebsockets.h
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 /*! \defgroup Protocols-and-Plugins Protocols and Plugins
@@ -123,8 +124,8 @@ lws_protocol_get(struct lws *wsi) LWS_WARN_DEPRECATED;
  * helper to be called in the per-vhost init LWS_CALLBACK_PROTOCOL_INIT
  */
 LWS_VISIBLE LWS_EXTERN void *
-lws_protocol_vh_priv_zalloc(struct lws_vhost *vhost, const struct lws_protocols *prot,
-			    int size);
+lws_protocol_vh_priv_zalloc(struct lws_vhost *vhost,
+			    const struct lws_protocols *prot, int size);
 
 /**
  * lws_protocol_vh_priv_get() - retreive a protocol's per-vhost storage
@@ -136,7 +137,8 @@ lws_protocol_vh_priv_zalloc(struct lws_vhost *vhost, const struct lws_protocols 
  * by lws_protocol_vh_priv_zalloc() earlier
  */
 LWS_VISIBLE LWS_EXTERN void *
-lws_protocol_vh_priv_get(struct lws_vhost *vhost, const struct lws_protocols *prot);
+lws_protocol_vh_priv_get(struct lws_vhost *vhost,
+			 const struct lws_protocols *prot);
 
 /**
  * lws_adjust_protocol_psds - change a vhost protocol's per session data size
@@ -180,7 +182,7 @@ lws_pvo_search(const struct lws_protocol_vhost_options *pvo, const char *name);
 /**
  * lws_pvo_get_str() - retreive a string pvo value
  *
- * \param pvo:	the first pvo in the linked-list
+ * \param in:	the first pvo in the linked-list
  * \param name: the name of the pvo to return if found
  * \param result: pointer to a const char * to get the result if any
  *
@@ -216,9 +218,8 @@ struct lws_plugin {
 	struct lws_plugin *list; /**< linked list */
 #if (UV_VERSION_MAJOR > 0)
 	uv_lib_t lib; /**< shared library pointer */
-#else
-	void *l; /**< so we can compile on ancient libuv */
 #endif
+	void *l; /**< so we can compile on ancient libuv */
 	char name[64]; /**< name of the plugin */
 	struct lws_plugin_capability caps; /**< plugin capabilities */
 };

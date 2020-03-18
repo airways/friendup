@@ -1,24 +1,25 @@
 /*
  * libwebsockets - small server side websockets and web server implementation
  *
- * Copyright (C) 2010-2018 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2010 - 2019 Andy Green <andy@warmcat.com>
  *
- *  This library is free software; you can redistribute it and/or
- *  modify it under the terms of the GNU Lesser General Public
- *  License as published by the Free Software Foundation:
- *  version 2.1 of the License.
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to
+ * deal in the Software without restriction, including without limitation the
+ * rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+ * sell copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
  *
- *  This library is distributed in the hope that it will be useful,
- *  but WITHOUT ANY WARRANTY; without even the implied warranty of
- *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
- *  Lesser General Public License for more details.
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
  *
- *  You should have received a copy of the GNU Lesser General Public
- *  License along with this library; if not, write to the Free Software
- *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
- *  MA  02110-1301  USA
- *
- * included from libwebsockets.h
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+ * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+ * IN THE SOFTWARE.
  */
 
 /** \defgroup log Logging
@@ -34,24 +35,22 @@
 ///@{
 
 enum lws_log_levels {
-	LLL_ERR = 1 << 0,
-	LLL_WARN = 1 << 1,
-	LLL_NOTICE = 1 << 2,
-	LLL_INFO = 1 << 3,
-	LLL_DEBUG = 1 << 4,
-	LLL_PARSER = 1 << 5,
-	LLL_HEADER = 1 << 6,
-	LLL_EXT = 1 << 7,
-	LLL_CLIENT = 1 << 8,
-	LLL_LATENCY = 1 << 9,
-	LLL_USER = 1 << 10,
-	LLL_THREAD = 1 << 11,
+	LLL_ERR		= 1 << 0,
+	LLL_WARN	= 1 << 1,
+	LLL_NOTICE	= 1 << 2,
+	LLL_INFO	= 1 << 3,
+	LLL_DEBUG	= 1 << 4,
+	LLL_PARSER	= 1 << 5,
+	LLL_HEADER	= 1 << 6,
+	LLL_EXT		= 1 << 7,
+	LLL_CLIENT	= 1 << 8,
+	LLL_LATENCY	= 1 << 9,
+	LLL_USER	= 1 << 10,
+	LLL_THREAD	= 1 << 11,
 
-	LLL_COUNT = 12 /* set to count of valid flags */
+	LLL_COUNT	= 12 /* set to count of valid flags */
 };
 
-LWS_VISIBLE LWS_EXTERN void _lws_log(int filter, const char *format, ...) LWS_FORMAT(2);
-LWS_VISIBLE LWS_EXTERN void _lws_logv(int filter, const char *format, va_list vl);
 /**
  * lwsl_timestamp: generate logging timestamp string
  *
@@ -63,6 +62,13 @@ LWS_VISIBLE LWS_EXTERN void _lws_logv(int filter, const char *format, va_list vl
  */
 LWS_VISIBLE LWS_EXTERN int
 lwsl_timestamp(int level, char *p, int len);
+
+#if defined(LWS_PLAT_OPTEE) && !defined(LWS_WITH_NETWORK)
+#define _lws_log(aaa, ...) SMSG(__VA_ARGS__)
+#else
+LWS_VISIBLE LWS_EXTERN void _lws_log(int filter, const char *format, ...) LWS_FORMAT(2);
+LWS_VISIBLE LWS_EXTERN void _lws_logv(int filter, const char *format, va_list vl);
+#endif
 
 /* these guys are unconditionally included */
 
@@ -80,7 +86,7 @@ lwsl_timestamp(int level, char *p, int len);
  *  active
  */
 
-#ifdef _DEBUG
+#if defined(_DEBUG)
 #if defined(LWS_WITH_NO_LOGS)
 /* notice, warn and log are always compiled in */
 #define lwsl_warn(...) _lws_log(LLL_WARN, __VA_ARGS__)
@@ -110,6 +116,7 @@ lwsl_timestamp(int level, char *p, int len);
 #define lwsl_thread(...) do {} while(0)
 
 #endif
+
 
 #define lwsl_hexdump_err(...) lwsl_hexdump_level(LLL_ERR, __VA_ARGS__)
 #define lwsl_hexdump_warn(...) lwsl_hexdump_level(LLL_WARN, __VA_ARGS__)
@@ -178,6 +185,36 @@ lws_set_log_level(int level,
  */
 LWS_VISIBLE LWS_EXTERN void
 lwsl_emit_syslog(int level, const char *line);
+
+/**
+ * lwsl_emit_stderr() - helper log emit function writes to stderr
+ *
+ * \param level: one of LLL_ log level indexes
+ * \param line: log string
+ *
+ * You use this by passing the function pointer to lws_set_log_level(), to set
+ * it as the log emit function, it is not called directly.
+ *
+ * It prepends a system timestamp like [2018/11/13 07:41:57:3989]
+ *
+ * If stderr is a tty, then ansi colour codes are added.
+ */
+LWS_VISIBLE LWS_EXTERN void
+lwsl_emit_stderr(int level, const char *line);
+
+/**
+ * lwsl_emit_stderr_notimestamp() - helper log emit function writes to stderr
+ *
+ * \param level: one of LLL_ log level indexes
+ * \param line: log string
+ *
+ * You use this by passing the function pointer to lws_set_log_level(), to set
+ * it as the log emit function, it is not called directly.
+ *
+ * If stderr is a tty, then ansi colour codes are added.
+ */
+LWS_VISIBLE LWS_EXTERN void
+lwsl_emit_stderr_notimestamp(int level, const char *line);
 
 /**
  * lwsl_visible() - returns true if the log level should be printed

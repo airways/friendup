@@ -18,6 +18,7 @@ FriendWebSocket = function( conf )
 	var self = this;
 	
 	// REQUIRED CONFIG
+	self.pConf = conf;
 	self.url = conf.url;
 	self.sessionId = conf.sessionId;
 	self.authId = conf.authId;
@@ -36,8 +37,8 @@ FriendWebSocket = function( conf )
 		length / size check: if str.length is above maxStrLength, its turned into a blob and rechecked.
 		If the blob byte size is above maxFCBytes, the event is chunked before sending.
 	*/
-	//self.maxFCBytes = 0xffff; // FriendCore ws packet max bytes - set to 65535 because of unknown problem!
-	self.maxFCBytes = 8192;
+	self.maxFCBytes = 0xffff; // FriendCore ws packet max bytes - set to 65535 because of unknown problem!
+	//self.maxFCBytes = 8192;
 	self.metaReserve = 512;
 	self.maxStrLength = ( Math.floor( self.maxFCBytes / 4 )) - self.metaReserve;
 		// worst case scenario its all 4 byte unicode
@@ -66,9 +67,9 @@ FriendWebSocket = function( conf )
 
 FriendWebSocket.prototype.send = function( msgObj )
 {
-	this.sendOnSocket( {
+	return this.sendOnSocket( {
 		type: 'msg',
-		data: msgObj,
+		data: msgObj
 	} );
 }
 
@@ -89,6 +90,9 @@ FriendWebSocket.prototype.close = function( code, reason )
 	self.sessionId = null;
 	self.authId = null;
 	self.onmessage = null;
+	// Tell we are closing
+	if( self.onstate )
+		self.onstate( { type: 'close' }, true );
 	self.onstate = null;
 	self.onend = null;
 	self.wsClose( code, reason );
@@ -132,18 +136,38 @@ FriendWebSocket.prototype.connect = function()
 	var self = this;
 	if ( !self.url || !self.url.length )
 	{
-		console.log( 'socket.url', self.url );
+		if( self.pConf )
+		{
+			console.log( 'We have a previous config. Trying the url there.', self.pConf.url );
+			self.url = self.pConf.url;
+			return self.connect();
+		}
 		throw new Error( 'no url provided for socket' );
 	}
 	
-	if( self.state == 'connecting' ) { console.log('ongoing connect. we will wait for this to finish.'); return; }
+	if( self.state == 'connecting' ) {
+		console.log('ongoing connect. we will wait for this to finish.');
+		return;
+	}
+	
 	self.setState( 'connecting' );
-	try {
+	
+	try
+	{
 		if( self.ws )
 		{
 			self.cleanup();
 		}
-		self.ws = new window.WebSocket( self.url, 'FC-protocol' );
+		try
+		{
+			self.ws = new window.WebSocket( self.url, 'FC-protocol' );
+		}
+		catch( e2 )
+		{
+			console.log( '[coreSocket] Failed to connect.', h2 );
+			self.handleError( e2 );
+			return;
+		}
 	} 
 	catch( e )
 	{
@@ -188,7 +212,7 @@ FriendWebSocket.prototype.clearHandlers = function()
 FriendWebSocket.prototype.doReconnect = function()
 {
 	var self = this;
-	if ( !reconnectAllowed() ){
+	if ( !reconnectAllowed() ) {
 		if ( self.onend )
 			self.onend();
 		return false;
@@ -213,17 +237,15 @@ FriendWebSocket.prototype.doReconnect = function()
 	{
 		self.reconnectTimer = null;
 		self.reconnectAttempt += 1;
-		
-        console.log( 'ws reconnect' );
 		self.connect();
 	}
 	
 	function reconnectAllowed()
 	{
 		var checks = {
-			allow : self.allowReconnect,
+			allow        : self.allowReconnect,
 			hasTriesLeft : !tooManyTries(),
-			hasSession : !!self.sessionId,
+			hasSession   : !!self.sessionId,
 		};
 		
 		var allow = !!( true
@@ -235,6 +257,7 @@ FriendWebSocket.prototype.doReconnect = function()
 		if ( !allow )
 		{
 			console.log( 'not allowed to reconnect', checks )
+			// Try to do a module call
 			return false;
 		}
 		return true;
@@ -277,6 +300,7 @@ FriendWebSocket.prototype.setState = function( type, data )
 		type: type,
 		data: data,
 	};
+	//console.log( 'State: ', this.state );
 	if( this.onstate ) this.onstate( this.state );
 }
 
@@ -305,28 +329,31 @@ FriendWebSocket.prototype.handleError = function( e )
 
 FriendWebSocket.prototype.handleSocketMessage = function( e )
 {	
-	if( this.pingCheck )
-	{ 
-		clearTimeout( this.pingCheck ); 
-		this.pingCheck = null; 
-	}
+	var self = this;
+	
+	//we received data... good. dont let some delayed ping create panic.
+	if( self.pingCheck ) { clearTimeout( self.pingCheck ); self.pingCheck = 0 }
 	
 	// TODO: Debug why some data isn't encapsulated
 	// console.log( e.data );
 	var msg = friendUP.tool.objectify( e.data );
 	if( !msg )
 	{
-		console.log( 'FriendWebSocket.handleSocketMessage - invalid data, could not parse JSON' );
+		console.log( 'FriendWebSocket.handleSocketMessage - invalid data, could not parse JSON',
+			e.data );
 		return;
 	}
-	
+	//console.log( msg );
 	// Handle server notices with session timeout / death
 	if( msg.data && msg.data.type == 'server-notice' )
 	{
+		
 		if( msg.data.data == 'session killed' )
 		{
 			Notify( { title: i18n( 'i18n_session_killed' ), text: i18n( 'i18n_session_killed_desc' ) } );
+			 console.log( 'Test3: Session was killed!' );
 			this.handleClose();
+			
 			setTimeout( function()
 			{
 				Workspace.logout();
@@ -463,25 +490,40 @@ FriendWebSocket.prototype.sendCon = function( msg )
 FriendWebSocket.prototype.sendOnSocket = function( msg, force )
 {
 	var self = this;
-	if ( !wsReady() && !socketReady( force ) )
+	if( !socketReady( force ) )
 	{
 		queue( msg );
-		return;
+		return false;
 	}
 	
-	if ( 'con' !== msg.type )
+	if ( !wsReady() )
 	{
-		//console.log( 'FriendWebSocket.sendOnSocket', msg );
+		queue( msg );
+		self.doReconnect();
+		return false;
+	}
+	
+	if( 'con' !== msg.type )
+	{
+		//console.log( 'FriendWebSocket.sendOnSocket - type con:', msg );
 	}
 	
 	var msgStr = friendUP.tool.stringify( msg );
-	if ( checkMustChunk( msgStr ))
+	if( checkMustChunk( msgStr ))
 	{
-		self.chunkSend( msgStr );
-		return;
+		// console.log( 'Test3: Sending chuked.' );
+		return self.chunkSend( msgStr );
 	}
 	
-	self.wsSend( msgStr );
+	const success = self.wsSend( msgStr );
+	if( !success )
+	{
+		queue( msg );
+		self.reconnect();
+		return false;
+	}
+	
+	return success;
 	
 	function queue( msg )
 	{
@@ -499,13 +541,18 @@ FriendWebSocket.prototype.sendOnSocket = function( msg, force )
 	
 	function wsReady()
 	{
-		var ready = !!( self.ws && ( self.ws.readyState === 1 ));
-		return ready;
+		if ( !self.ws )
+			return false;
+		
+		if ( 1 !== self.ws.readyState )
+			return false;
+		
+		return true;
 	}
 	
 	function checkMustChunk( str )
 	{
-		if ( str.length < self.maxStrLength )
+		if( str.length < self.maxStrLength )
 		{
 			//console.log( 'No need to chunk this one: ' + str.length );
 			return false;
@@ -515,10 +562,14 @@ FriendWebSocket.prototype.sendOnSocket = function( msg, force )
 		
 		var realString = new String( str );
 		strBlob = new Blob( realString );
-		if ( strBlob.size >= self.maxFCBytes )
+		if( strBlob.size >= self.maxFCBytes )
+		{
 			return true;
+		}
 		else
+		{
 			return false;
+		}
 	}
 }
 
@@ -628,15 +679,19 @@ FriendWebSocket.prototype.wsSend = function( str )
 	var self = this;
 	try
 	{
-		self.ws.send( str );
+		var res = self.ws.send( str );
+		// console.log( 'Test3: Successfully sent;', str );
 	}
 	catch( e )
 	{
 		console.log( 'FriendWebSocket.sendOnSocket failed', {
-			e   : e,
-			str : str,
-		});
+			e  : e,
+			str: str
+		} );
+		return false;
 	}
+	
+	return true;
 }
 
 FriendWebSocket.prototype.executeSendQueue = function()
@@ -701,13 +756,17 @@ FriendWebSocket.prototype.handlePong = function( timeSent )
 	var now = Date.now();
 	var pingTime = now - timeSent;
 
-	if( self.pingCheck ) { clearTimeout( self.pingCheck); self.pingCheck = 0 }
+	if( self.pingCheck ) { clearTimeout( self.pingCheck ); self.pingCheck = 0 }
 	self.setState( 'ping', pingTime );
 }
 
 FriendWebSocket.prototype.handleChunk = function( chunk )
 {	
 	var self = this;
+	
+	//we received data... good. dont let some delayed ping create panic.
+	if( self.pingCheck ) { clearTimeout( self.pingCheck ); self.pingCheck = 0 }
+	
 	chunk.total = parseInt( chunk.total, 10 );
 	chunk.part = parseInt( chunk.part, 10 );
 	var cid = chunk.id;
@@ -748,7 +807,7 @@ FriendWebSocket.prototype.handleChunk = function( chunk )
 		*/
 		
 		// well, then, try b64 decode
-		var notB64 = atob( whole );
+		var notB64 = window.Base64alt ? Base64alt.decode( whole ) : atob( whole );
 		var parsed = friendUP.tool.objectify( notB64 );
 		return parsed;
 	}
@@ -785,7 +844,7 @@ FriendWebSocket.prototype.wsClose = function( code, reason )
 FriendWebSocket.prototype.cleanup = function()
 {
 	var self = this;
-	self.ready = false;
+	this.conn = false;
 	self.stopKeepAlive();
 	self.clearHandlers();
 	self.wsClose();

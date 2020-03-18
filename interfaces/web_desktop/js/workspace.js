@@ -27,12 +27,15 @@ Workspace = {
 	menu: [],
 	diskNotificationList: [],
 	notifications: [],
+	notificationEvents: [],
 	applications: [],
 	importWindow: false,
 	menuState: '',
 	themeOverride: false,
 	systemInfo: false,
-	lastfileSystemChangeMessage:false,
+	websocketsOffline: true,
+	workspaceIsDisconnected: false,
+	lastfileSystemChangeMessage: false,
 	serverIsThere: false,
 	runLevels: [
 		{
@@ -54,18 +57,14 @@ Workspace = {
 
 	preinit: function()
 	{
-		var img = new Image();
-		img.src = '/webclient/theme/loginimage.jpg';
-		img.onload = function()
-		{
-			Workspace.init();
-		}
+		// Go ahead and init!
+		ScreenOverlay.init();
+		Workspace.init();
 		
 		if( window.friendApp )
 		{
 			document.body.classList.add( 'friendapp' );
 		}
-
 	},
 	init: function()
 	{
@@ -75,7 +74,7 @@ Workspace = {
 		// Preload some images
 		var imgs = [
 			'/webclient/gfx/system/offline_16px.png',
-			'/themes/friendup12/gfx/loading.gif'
+			'/themes/friendup12/gfx/busy.png'
 		];
 		this.imgPreload = [];
 		for( var a = 0; a < imgs.length; a++ )
@@ -90,6 +89,8 @@ Workspace = {
 		{
 			return setTimeout( 'Workspace.init()', 50 );
 		}
+		
+		this.initialized = true;
 
 		checkMobileBrowser();
 		if( !this.addedMobileCSS && window.isMobile )
@@ -103,18 +104,22 @@ Workspace = {
 		this.login();
 	},
 	// Ready after init
+	// NB: This is where we go towards workspace_inside.js
 	postInit: function()
 	{
+		if( this.postInitialized ) return;
+		
 		// Everything must be ready
-		if( typeof( ge ) == 'undefined' || !document.body.classList.contains( 'Inside' ) )
+		if( typeof( ge ) == 'undefined' )
 		{
 			if( this.initTimeout )
 				clearTimeout( this.initTimeout );
-			this.initTimeout = setTimeout ( 'Workspace.init()', 5 );
+			this.initTimeout = setTimeout ( 'Workspace.postInit()', 25 );
+			return;
 		}
 
 		// We passed!
-		this.initialized = true;
+		this.postInitialized = true;
 
 		// Do the init!
 		window.addEventListener( 'beforeunload', Workspace.leave, true );
@@ -128,9 +133,6 @@ Workspace = {
 		var dapis = document.createElement( 'script' );
 		dapis.src = '/system.library/module/?module=system&command=doorsupport&sessionid=' + this.sessionId;
 		document.getElementsByTagName( 'head' )[0].appendChild( dapis );
-
-		// Init the deepest field
-		DeepestField.init();
 
 		// Add event listeners
 		for( var a = 0; a < this.runLevels.length; a++ )
@@ -150,7 +152,7 @@ Workspace = {
 
 		// Setup default Doors screen
 		var wbscreen = new Screen( {
-			title: 'Workspace',
+			title: 'Friend Workspace',
 			id:	'DoorsScreen',
 			extra: Workspace.fullName,
 			taskbar: true,
@@ -160,6 +162,15 @@ Workspace = {
 		// Make links to screen on this object
 		this.screen = wbscreen;
 		this.screenDiv = wbscreen.div;
+		
+		var tray = document.createElement( 'div' );
+		tray.id = 'Tray';
+		this.screenDiv.appendChild( tray );
+
+		// Init the deepest field
+		if( !isMobile )
+			DeepestField.init();
+		else DeepestField = false;
 
 		// Key grabber
 		if( !ge( 'InputGrabber' ) )
@@ -180,7 +191,7 @@ Workspace = {
 			var wd = wbscreen.div.screenTitle.getElementsByClassName( 'Extra' )[0].widget;
 			if( wd )
 			{
-				if( wd.showing )
+				if( wd.shown )
 				{
 					wd.hideWidget();
 				}
@@ -208,7 +219,7 @@ Workspace = {
 					o = {
 						width: 400,
 						height: 300,
-						valign: 'top',
+						top: Workspace.screen.contentDiv.offsetTop,
 						halign: 'right',
 						scrolling: false,
 						autosize: true
@@ -217,27 +228,36 @@ Workspace = {
 					ex.widget.dom.style.transition = 'height 0.25s';
 					ex.widget.showWidget = function()
 					{
-						ge( 'DoorsScreen' ).classList.add( 'HasWidget' );
+						var self = this;
+						this.dom.style.height = '0px';
 						Workspace.refreshExtraWidgetContents();
-						this.raise();
-						this.show();
-						if( isMobile )
-							CoverScreens();
+						CoverScreens();
+						ge( 'DoorsScreen' ).classList.add( 'HasWidget' );
+						setTimeout( function()
+						{
+							self.show();
+							self.raise();
+							ExposeScreens();
+						}, 100 );
 					}
 					ex.widget.hideWidget = function()
 					{
-						ge( 'DoorsScreen' ).classList.remove( 'HasWidget' );
-						if( this.showing )
+						var self = this;
+						ge( 'DoorsScreen' ).classList.add( 'HidingCalendar' );
+						setTimeout( function()
 						{
-							this.showing = false;
-							this.hide();
-							this.lower();
+							ge( 'DoorsScreen' ).classList.remove( 'HasWidget' );
+							ge( 'DoorsScreen' ).classList.remove( 'HidingCalendar' );
+							self.shown = false;
+							self.hide();
+							self.lower();
 							ExposeScreens();
-						}
+						}, 250 );
 					}
 				}
-				if( !ex.widget.showing )
+				if( !ex.widget.shown )
 					ex.widget.showWidget();
+				else ex.widget.hide();
 				return cancelBubble( e );
 			}
 			ex.onclick = Workspace.calendarClickEvent;
@@ -251,211 +271,162 @@ Workspace = {
 				return cancelBubble( e );
 			}
 		}
-		// Widget for mobile mode!
-		else if( !this.widget )
-		{
-			o = {
-				width: window.innerWidth,
-				height: 32,
-				valign: 'top',
-				halign: 'center',
-				scrolling: false,
-				autosize: false,
-				animate: true
-			};
-			this.widget = new Widget( o, ge( 'DeepestField' ) );
-			this.widget.showWidget = function()
-			{
-				ge( 'DoorsScreen' ).classList.add( 'HasWidget' );
-				Workspace.refreshExtraWidgetContents();
-				this.raise();
-				this.show();
-				CoverScreens();
-			}
-			this.widget.hideWidget = function()
-			{
-				ge( 'DoorsScreen' ).classList.remove( 'HasWidget' );
-				this.showing = false;
-				this.hide();
-				this.lower();
-				ExposeScreens();
-			}
-			this.refreshExtraWidgetContents();
-			this.widget.showWidget();
-			this.widget.slideUp = function()
-			{
-				ge( 'DoorsScreen' ).classList.remove( 'WidgetSlideDown' );
-				document.body.classList.remove( 'WidgetSlideDown' );
-				Workspace.widget.setFlag( 'height', 32 );
-				Workspace.widget.touchDown = false;
-				clearTimeout( Workspace.widget.tdtimeout );
-				Workspace.widget.tdtimeout = false;
-			}
-			this.widget.dom.addEventListener( 'touchstart', function( evt )
-			{
-				if( Workspace.mainDock )
-					Workspace.mainDock.closeDesklet();
-
-				ge( 'DoorsScreen' ).classList.add( 'WidgetSlideDown' );
-				document.body.classList.add( 'WidgetSlideDown' );
-				Workspace.widget.setFlag( 'height', window.innerHeight - 112 );
-				Workspace.widget.touchDown = { x: evt.touches[0].clientX, y: evt.touches[0].clientY };
-				
-				// Timeout for slide
-				Workspace.widget.tdtimeout = setTimeout( function()
-				{
-					Workspace.widget.touchDown = false;
-					Workspace.widget.tdtimeout = false;
-				}, 500 );
-				hideKeyboard();
-				cancelBubble( evt );
-			} );
-			this.widget.dom.addEventListener( 'touchmove', function( evt )
-			{
-				if( Workspace.widget.touchDown )
-				{
-					if( Workspace.widget.touchDown.y - evt.touches[0].clientY > 10 )
-					{
-						Workspace.widget.slideUp();
-						cancelBubble( evt );
-					}
-				}
-			} );
-		}
 
 		// Setup clock
-		var ex = ge( 'DoorsScreen' ).screenObject._titleBar;
-		ex = ex.getElementsByClassName( 'Extra' )[0];
-		function clock()
+		if( !isMobile )
 		{
-			var d = new Date();
-			if( !ex.time )
+			var ex = ge( 'DoorsScreen' ).screenObject._titleBar;
+			ex = ex.getElementsByClassName( 'Extra' )[0];
+			function clock()
 			{
-				var t = document.createElement( 'div' );
-				t.className = 'Time';
-				ex.appendChild( t );
-				ex.time = t;
-			}
-			if( Workspace.workspaceIsDisconnected )
-			{
-				if( !ex.offline )
+				var d = new Date();
+				if( !ex.time )
 				{
-					var o = document.createElement( 'div' );
-					o.className = 'Offline';
-					o.innerHTML = i18n( 'i18n_ws_disconnected' );
-					if( ex.time )
-					{
-						ex.insertBefore( o, ex.time );
-					}
-					else
-					{
-						ex.appendChild( o );
-					}
-					ex.offline = o;
+					var t = document.createElement( 'div' );
+					t.className = 'Time';
+					ex.appendChild( t );
+					ex.time = t;
 				}
-			}
-			else if( ex.offline )
-			{
-				ex.removeChild( ex.offline );
-				ex.offline = null;
-			}
+				if( Workspace.workspaceIsDisconnected )
+				{
+					if( !ex.offline )
+					{
+						var o = document.createElement( 'div' );
+						o.className = 'Offline';
+						o.innerHTML = i18n( 'i18n_ws_disconnected' );
+						if( ex.time )
+						{
+							ex.insertBefore( o, ex.time );
+						}
+						else
+						{
+							ex.appendChild( o );
+						}
+						ex.offline = o;
+					}
+				}
+				else if( ex.offline )
+				{
+					ex.removeChild( ex.offline );
+					ex.offline = null;
+				}
 
-			// Set the clock
-			var e = '';
-			e +=    StrPad( d.getHours(), 2, '0' ) + ':' +
-					   StrPad( d.getMinutes(), 2, '0' ); /* + ':' +
-					   StrPad( d.getSeconds(), 2, '0' );*/
-			/*e +=    ' ' + StrPad( d.getDate(), 2, '0' ) + '/' +
-					   StrPad( d.getMonth() + 1, 2, '0' ) + '/' + d.getFullYear();*/
-			ex.time.innerHTML = e;
+				// Set the clock
+				var e = '';
+				e +=    StrPad( d.getHours(), 2, '0' ) + ':' +
+						   StrPad( d.getMinutes(), 2, '0' ); /* + ':' +
+						   StrPad( d.getSeconds(), 2, '0' );*/
+				/*e +=    ' ' + StrPad( d.getDate(), 2, '0' ) + '/' +
+						   StrPad( d.getMonth() + 1, 2, '0' ) + '/' + d.getFullYear();*/
+				ex.time.innerHTML = e;
 
-			// Realign workspaces
-			Workspace.nudgeWorkspacesWidget();
+				// Realign workspaces
+				Workspace.nudgeWorkspacesWidget();
+			}
+			this.clockInterval = setInterval( clock, 1000 );
 		}
-		this.clockInterval = setInterval( clock, 1000 );
 
 		// Recall wallpaper from settings
-		this.refreshUserSettings( function(){ Workspace.refreshDesktop(); } );
+		this.refreshUserSettings( function(){ 
+			// Refresh desktop for the first time
+			Workspace.refreshDesktop(); 
+		} );
 
 		// Create desktop
 		this.directoryView = new DirectoryView( wbscreen.contentDiv );
 
 		// Create default desklet
 		var mainDesklet = CreateDesklet( this.screenDiv, 64, 480, 'right' );
-		mainDesklet.dom.style.zIndex = 2147483641;
 
 		// Add desklet to dock
 		this.mainDock = mainDesklet;
-		this.mainDock.dom.oncontextmenu = function( e )
+		if( !isMobile )
 		{
-			var tar = e.target ? e.target : e.srcElement;
-			if( tar.classList && tar.classList.contains( 'Task' ) )
+			this.mainDock.dom.oncontextmenu = function( e )
 			{
-				return Workspace.showContextMenu( false, e );
-			}
-
-			var men = [
+				var tar = e.target ? e.target : e.srcElement;
+				if( tar.classList && tar.classList.contains( 'Task' ) )
 				{
-					name: i18n( 'i18n_edit_dock' ),
-					command: function()
-					{
-						ExecuteApplication( 'Dock' );
-					}
+					return Workspace.showContextMenu( false, e );
 				}
-			];
 
-			if( tar.classList && tar.classList.contains( 'Launcher' ) )
-			{
-				men.push( {
-					name: i18n( 'i18n_remove_from_dock' ),
-					command: function()
+				var men = [
 					{
-						Workspace.removeFromDock( tar.executable );
+						name: i18n( 'i18n_edit_dock' ),
+						command: function()
+						{
+							ExecuteApplication( 'Dock' );
+						}
 					}
-				} );
-			}
+				];
+
+				if( tar.classList && tar.classList.contains( 'Launcher' ) )
+				{
+					men.push( {
+						name: i18n( 'i18n_remove_from_dock' ),
+						command: function()
+						{
+							Workspace.removeFromDock( tar.executable );
+						}
+					} );
+				}
 			
-			if( movableWindowCount > 0 )
-			{
-				men.push( {
-					name: i18n( 'i18n_minimize_all_windows' ),
-					command: function( e )
-					{
-						var t = GetTaskbarElement();
-						var lW = null;
-						for( var a = 0; a < t.childNodes.length; a++ )
+				if( movableWindowCount > 0 )
+				{
+					men.push( {
+						name: i18n( 'i18n_minimize_all_windows' ),
+						command: function( e )
 						{
-							if( t.childNodes[a].view && !t.childNodes[a].view.parentNode.getAttribute( 'minimized' ) )
+							var t = GetTaskbarElement();
+							var lW = null;
+							for( var a = 0; a < t.childNodes.length; a++ )
 							{
-								t.childNodes[a].view.parentNode.setAttribute( 'minimized', 'minimized' );
+								if( t.childNodes[a].view && !t.childNodes[a].view.parentNode.getAttribute( 'minimized' ) )
+								{
+									t.childNodes[a].view.parentNode.setAttribute( 'minimized', 'minimized' );
+								}
 							}
+							_DeactivateWindows();
 						}
-						_DeactivateWindows();
-					}
-				} );
-				men.push( {
-					name: i18n( 'i18n_show_all_windows' ),
-					command: function( e )
-					{
-						var t = GetTaskbarElement();
-						for( var a = 0; a < t.childNodes.length; a++ )
+					} );
+					men.push( {
+						name: i18n( 'i18n_show_all_windows' ),
+						command: function( e )
 						{
-							if( t.childNodes[a].view && t.childNodes[a].view.parentNode.getAttribute( 'minimized' ) == 'minimized' )
+							var t = GetTaskbarElement();
+							for( var a = 0; a < t.childNodes.length; a++ )
 							{
-								t.childNodes[a].view.parentNode.removeAttribute( 'minimized' );
+								if( t.childNodes[a].view && t.childNodes[a].view.parentNode.getAttribute( 'minimized' ) == 'minimized' )
+								{
+									t.childNodes[a].view.parentNode.removeAttribute( 'minimized' );
+								}
 							}
+							_ActivateWindow( t.childNodes[t.childNodes.length-1].view );
 						}
-						_ActivateWindow( t.childNodes[t.childNodes.length-1].view );
-					}
-				} );
-			}
+					} );
+				}
 
-			Workspace.showContextMenu( men, e );
+				Workspace.showContextMenu( men, e );
+			}
+		}
+		// For mobiles
+		else
+		{
+			this.mainDock.dom.oncontextmenu = function( e )
+			{
+				var tar = e.target ? e.target : e.srcElement;
+				if( window.MobileContextMenu )
+				{
+					MobileContextMenu.show( tar );
+				}
+			}
 		}
 		this.reloadDocks();
 
 		// Init security subdomains
 		SubSubDomains.initSubSubDomains();
+		
+		// console.log( 'Test2: Done post init.' );
 	},
 	encryption: {
 
@@ -472,7 +443,12 @@ Workspace = {
 		{
 			if( typeof( this.fcrypt ) != 'undefined' )
 			{
+				if( u && !Workspace.loginUsername ) Workspace.loginUsername = u;
+				
 				p = ( !p || p.indexOf('HASHED') == 0 ? p : ( 'HASHED' + Sha256.hash( p ) ) );
+
+				if( window.ScreenOverlay )
+					ScreenOverlay.addDebug( 'Generating sha256 keys' );
 
 				var seed = ( u && p ? this.fcrypt.generateKey( ( u + ':' + p ), 32, 256, 'sha256' ) : false );
 
@@ -480,9 +456,17 @@ Workspace = {
 
 				if( !keys || ( keys && !keys.privatekey ) || ( keys && seed && keys.recoverykey != seed ) )
 				{
+					if( window.ScreenOverlay )
+						ScreenOverlay.addDebug( 'Generating encryption keys' );
 					this.keyobject = this.fcrypt.generateKeys( false, false, false, seed );
-
 					keys = this.fcrypt.getKeys( this.keyobject );
+				}
+				else
+				{
+					if( window.ScreenOverlay )
+					{
+						ScreenOverlay.addDebug( 'Loaded encryption keys' );
+					}
 				}
 
 				if( keys )
@@ -494,6 +478,8 @@ Workspace = {
 							publickey   : this.fcrypt.encodeKeyHeader( keys.publickey ),
 							recoverykey : keys.recoverykey
 						};
+						if( window.ScreenOverlay )
+							ScreenOverlay.addDebug( 'Keys stored encoded' );
 					}
 					else
 					{
@@ -502,6 +488,8 @@ Workspace = {
 							publickey   : keys.publickey,
 							recoverykey : keys.recoverykey
 						};
+						if( window.ScreenOverlay )
+							ScreenOverlay.addDebug( 'Keys stored raw' );
 					}
 				}
 				return this.keys;
@@ -509,11 +497,13 @@ Workspace = {
 
 			return false;
 		},
-
 		generateKeys: function( u, p )
 		{
 			if( typeof( this.fcrypt ) != 'undefined' )
 			{
+				if( window.ScreenOverlay )
+					ScreenOverlay.addDebug( 'Generating keys' );
+				
 				var pass = ( u && p ? u + ':' : '' ) + ( p ? p : '' );
 
 				var keyobject = this.fcrypt.generateKeys( pass );
@@ -543,7 +533,6 @@ Workspace = {
 
 			return false;
 		},
-
 		getKeys: function()
 		{
 			if( typeof( this.fcrypt ) != 'undefined' && this.keys.client )
@@ -568,7 +557,6 @@ Workspace = {
 
 			return false;
 		},
-
 		getServerKey: function( callback )
 		{
 			var k = new Module( 'system' );
@@ -588,7 +576,6 @@ Workspace = {
 			}
 			k.execute( 'getserverkey' );
 		},
-
 		encryptRSA: function( str, publickey )
 		{
 			if( typeof( this.fcrypt ) != 'undefined' )
@@ -598,7 +585,6 @@ Workspace = {
 
 			return false;
 		},
-
 		decryptRSA: function( cipher, privatekey )
 		{
 			if( typeof( this.fcrypt ) != 'undefined' )
@@ -608,7 +594,6 @@ Workspace = {
 
 			return false;
 		},
-
 		encryptAES: function( str, publickey )
 		{
 			if( typeof( this.fcrypt ) != 'undefined' )
@@ -618,7 +603,6 @@ Workspace = {
 
 			return false;
 		},
-
 		decryptAES: function( cipher, privatekey )
 		{
 			if( typeof( this.fcrypt ) != 'undefined' )
@@ -628,7 +612,6 @@ Workspace = {
 
 			return false;
 		},
-
 		encrypt: function( str, publickey )
 		{
 			if( typeof( this.fcrypt ) != 'undefined' )
@@ -643,7 +626,6 @@ Workspace = {
 
 			return false;
 		},
-
 		decrypt: function( cipher, privatekey )
 		{
 			if( typeof( this.fcrypt ) != 'undefined' )
@@ -658,7 +640,6 @@ Workspace = {
 
 			return false;
 		},
-
 		sha256: function( str )
 		{
 			if( !str && typeof( this.fcrypt ) != 'undefined' )
@@ -673,7 +654,6 @@ Workspace = {
 
 			return false;
 		},
-
 		md5: function( str )
 		{
 			if( !str && typeof( this.fcrypt ) != 'undefined' )
@@ -687,6 +667,25 @@ Workspace = {
 			}
 
 			return false;
+		}
+	},
+	exitMobileMenu: function()
+	{
+		document.body.classList.remove( 'WorkspaceMenuOpen' );
+		if( ge( 'WorkspaceMenu' ) )
+		{
+			var eles = ge( 'WorkspaceMenu' ).getElementsByTagName( '*' );
+			for( var z = 0; z < eles.length; z++ )
+			{
+				if( eles[z].classList && eles[z].classList.contains( 'Open' ) )
+					eles[z].classList.remove( 'Open' );
+			}
+			ge( 'WorkspaceMenu' ).classList.remove( 'Open' );
+			if( WorkspaceMenu.back )
+			{
+				WorkspaceMenu.back.parentNode.removeChild( WorkspaceMenu.back );
+				WorkspaceMenu.back = null;
+			}
 		}
 	},
 	showLoginPrompt: function()
@@ -712,7 +711,7 @@ Workspace = {
 			height: 480,
 			'min-height': 280,
 			'resize': false,
-			title: 'Login to FriendUP',
+			title: 'Login to Friend OS',
 			close: false,
 			login: true,
 			theme: 'login'
@@ -725,37 +724,59 @@ Workspace = {
 	},
 	flushSession: function()
 	{
-		this.sessionId = null;
+		this.sessionId = '';
 		localStorage.removeItem( 'WorkspaceSessionID' );
 	},
 	// When session times out, use log in again...
-	relogin: function()
+	relogin: function( callback )
 	{
 		// While relogging in or in a real login() call, just skip
 		if( this.reloginInProgress || this.loginCall ) return;
 		
+		// Kill all http connections that would block
+		_cajax_http_connections = 0;
+		
+		//console.log( 'Test2: Relogin in progress' );
+		
 		var self = this;
 		
-		function executeCleanRelogin()
-		{	
+		function killConn()
+		{
 			if( Workspace.conn )
 			{
 				try
 				{
-					Workspace.conn.close();
+					Workspace.conn.ws.close();
 				}
 				catch( e )
 				{
-					console.log( 'Could not close conn.' );
+					//console.log( 'Could not close conn.' );
 				}
 				delete Workspace.conn;
 			}
-			Workspace.flushSession();
+		}
+		
+		function executeCleanRelogin()
+		{	
+			killConn();
 			
 			if( Workspace.loginUsername && Workspace.loginPassword )
 			{
-				Workspace.login( Workspace.loginUsername, Workspace.loginPassword, false, Workspace.initWebSocket );
+				// // console.log( 'Test2: Regular login with user and pass' );
+				var u = typeof( Workspace.loginUsername ) == 'undefined' ? false : Workspace.loginUsername;
+				var p = typeof( Workspace.loginPassword ) == 'undefined' ? false : Workspace.loginPassword;
+				if( !( !!u && !!p ) )
+					Workspace.flushSession();
+				Workspace.login( u, p, false, Workspace.initWebSocket );
 			}
+			// Friend app waits some more
+			else if( window.friendApp )
+			{
+				// // console.log( 'Test2: Just return - we have nothing to go on. Try executing normal login' );
+				Workspace.reloginInProgress = false;
+				return Workspace.login();
+			}
+			// Just exit to login screen
 			else
 			{
 				// We're exiting!
@@ -767,14 +788,25 @@ Workspace = {
 		this.reloginAttempts = true;
 		
 		// See if we are alive!
+		// Cancel relogin context
+		CancelCajaxOnId( 'relogin' );
+		
 		var m = new Module( 'system' );
+		m.cancelId = 'relogin';
 		m.onExecuted = function( e, d )
 		{
+			//console.log( 'Test2: Got back: ', e, d );
+			
 			self.reloginAttempts = false;
 			Workspace.reloginInProgress = true;
 			
 			if( e == 'ok' )
 			{
+				// We have a successful login. Clear call blockers and update sessions, execute ajax queue
+				Workspace.reloginInProgress = false;
+				Workspace.loginCall = false;
+				Workspace.renewAllSessionIds();
+				// // console.log( 'Test2: Yeah! All good!' );
 				return;
 			}
 			else
@@ -782,21 +814,30 @@ Workspace = {
 				try
 				{
 					var js = JSON.parse( d );
-					if( parseInt( d.code ) == 3 || parseInt( d.code ) == 11 )
+					// Session authentication failed
+					if( parseInt( js.code ) == 3 || parseInt( js.code ) == 11 )
 					{
+						// console.log( 'Test2: Flush session' );
 						Workspace.flushSession();
+						Workspace.reloginInProgress = false;
+						return executeCleanRelogin();
 					}
 				}
 				catch( n )
 				{
+					killConn();
+					console.log( 'Error running relogin.', n );
 				}
 			}
 			if( Workspace.serverIsThere )
 			{
+				// console.log( 'Test2: Clean relogin' );
 				executeCleanRelogin();
 			}
 			else
 			{
+				killConn();
+				// // console.log( 'Test2: Wait a second before you can log in again.' );
 				// Wait a second before trying again
 				setTimeout( function()
 				{
@@ -807,16 +848,22 @@ Workspace = {
 		m.forceHTTP = true;
 		m.forceSend = true;
 		m.execute( 'usersettings' );
+		// console.log( 'Test2: Getting usersettings.' );
 	},
-	renewAllSessionIds: function()
+	// Renews session ids for cajax and executes ajax queue!
+	renewAllSessionIds: function( session )
 	{
+		if( session )
+			this.sessionId = session;
+		
+		// Reset this in this case
+		_cajax_http_connections = 0;
+		
 		// Check if there's a queue of objects waiting to run
 		if( Friend.cajax && Friend.cajax.length )
 		{
 			for( var a = 0; a < Friend.cajax.length; a++ )
 			{
-				Friend.cajax[a].addVar( 'sessionid', Workspace.sessionId );
-				Friend.cajax[a].open();
 				Friend.cajax[a].send();
 			}
 			Friend.cajax = [];
@@ -826,8 +873,10 @@ Workspace = {
 	{
 		if( sessionid )
 		{
+			//console.log( 'Test2: Logging in with sessionid.' );
+			
 			var _this = this;
-
+			
 			var m = new FriendLibrary( 'system' );
 			m.addVar( 'sessionid', sessionid );
 			m.addVar( 'deviceid', this.deviceid );
@@ -860,12 +909,20 @@ Workspace = {
 				}
 
 				Workspace.userLevel = json.level;
+				if( !Workspace.loginUsername && json.username ) Workspace.loginUsername = json.username;
 
-				var hasSessionID = ( json.sessionid && json.sessionid.length > 1 );
-				var hasLoginID = ( json.loginid && json.loginid.length > 1 );
-
+				var hasSessionID = ( typeof( json.sessionid ) != 'undefined' && json.sessionid && json.sessionid.length > 1 );
+				var hasLoginID = ( typeof( json.loginid ) != 'undefined' && json.loginid && json.loginid.length > 1 );
+				
 				if( json.result == '0' || hasSessionID || hasLoginID || json.result == 3 )
 				{
+					// Successful login, clear blockers and execute ajax queue
+					Workspace.reloginInProgress = false;
+					Workspace.loginCall = false;
+					Workspace.renewAllSessionIds( hasSessionID ? json.sessionid : false );
+				
+					// console.log( 'Test2: Success! Logged in with sessionid.' );
+					
 					return Workspace.initUserWorkspace( json, ( callback && typeof( callback ) == 'function' ? callback( true, serveranswer ) : false ), ev )
 				}
 				else
@@ -892,6 +949,8 @@ Workspace = {
 	{
 		var self = this;
 		
+		//console.log( 'Test2: Normal login.' );
+		
 		// Test if we have a stored session
 		var sess = localStorage.getItem( 'WorkspaceSessionID' );
 		if( sess && sess.length )
@@ -908,26 +967,44 @@ Workspace = {
 			return true;
 		}
 		
+		// Close conn here - new login regenerates sessionid
+		if( Workspace.conn )
+		{
+			try
+			{
+				Workspace.conn.ws.close();
+			}
+			catch( e )
+			{
+				console.log( 'Could not close conn.' );
+			}
+			delete Workspace.conn;
+		}
+		
 		// Check local storage
 		var ru = window.localStorage.getItem( 'WorkspaceUsername' );
 		var rp = window.localStorage.getItem( 'WorkspacePassword' );
-		if( ru && rp )
+		if( ru && rp && typeof( ru ) != 'undefined' )
 		{
 			u = ru;
 			p = rp;
+			r = true;
 		}
 
 		// Require username and pw to login
-		if( !u || !p )
+		if( !u || !p || typeof( u ) == 'undefined' )
 		{
+			//console.log( 'Test3: Doing the login test.', u, p );
 			// Login by url vars
-			if( GetUrlVar( 'username' ) && GetUrlVar( 'password' ) )
+			var gu = GetUrlVar( 'username' );
+			var gp = GetUrlVar( 'password' );
+			if( gu && gp && typeof( gu ) != 'undefined' )
 			{
 				return Workspace.login( decodeURIComponent( GetUrlVar( 'username' ) ), decodeURIComponent( GetUrlVar( 'password' ) ) );
 			}
 			else if( GetUrlVar( 'sessionid' ) )
 			{
-				return Workspace.loginSessionId( GetUrlVar( 'sessionid' ) );
+				return Workspace.loginSessionId( GetUrlVar( 'sessionid' ), callback, ev );
 			}
 			Workspace.reloginInProgress = false;
 			if( callback && typeof( callback ) == 'function' ) callback( false );
@@ -935,18 +1012,25 @@ Workspace = {
 		}
 
 		var t = this;
-		this.loginUsername = u;
-
-		if( p.indexOf('HASHED') == 0 )
+		
+		// p and u needs trushy true! :-)
+		if( !!p & !!u )
 		{
-			this.loginPassword = p;
-		}
-		else
-		{
-			this.loginPassword = 'HASHED' + Sha256.hash( p );
+			this.loginUsername = u;
+
+			if( p.indexOf( 'HASHED' ) == 0 )
+			{
+				this.loginPassword = p;
+				//console.log( 'SET LOGIN PASSWORD = ' + p );
+			}
+			else
+			{
+				this.loginPassword = 'HASHED' + Sha256.hash( p );
+				//console.log( 'SET HASHED PASSWORD = ' + p );
+			}
 		}
 
-		if( this.loginUsername && this.loginPassword )
+		if( typeof( this.loginUsername ) != 'undefined' && this.loginUsername && this.loginPassword )
 		{
 			// FIXME: Speed this up for the Edge browser
 			this.encryption.setKeys( this.loginUsername, this.loginPassword );
@@ -956,15 +1040,7 @@ Workspace = {
 			*/
 			if( r )
 			{
-				if( this.encryption.keys.client )
-				{
-					ApplicationStorage.save( {
-						privatekey  : this.encryption.keys.client.privatekey,
-						publickey   : this.encryption.keys.client.publickey,
-						recoverykey : this.encryption.keys.client.recovery
-					},
-					{ applicationName : 'Workspace' } );
-				}
+				Workspace.rememberKeys();
 			}
 
 			// Avoid queue!
@@ -977,19 +1053,26 @@ Workspace = {
 			var m = new FriendLibrary( 'system' );
 			this.loginCall = m;
 
-			if( this.loginUsername )
+			var triedWithSession = false;
+	
+			if( this.loginUsername && typeof( this.loginUsername ) != 'undefined' )
 			{
 				m.addVar( 'username', this.loginUsername );
 				m.addVar( 'password', this.loginPassword );
+				//console.log( 'Adding U and P: ', this.loginUsername, this.loginPassword );
 			}
-			m.addVar( 'deviceid', GetDeviceId() );
-			if( this.sessionId )
+			else if( this.sessionId )
 			{
 				m.addVar( 'sessionid', this.sessionId );
+				triedWithSession = true;
 			}
+			
+			m.addVar( 'deviceid', GetDeviceId() );
 
 			m.onExecuted = function( json, serveranswer )
 			{
+				//console.log( 'Test2: We executed a login query', json, serveranswer );
+				
 				if( typeof( json ) != 'object' )
 				{
 					try
@@ -1018,18 +1101,22 @@ Workspace = {
 
 				Workspace.userLevel = json.level;
 
-				var hasSessionID = ( json.sessionid && json.sessionid.length > 1 );
-				var hasLoginID = ( json.loginid && json.loginid.length > 1 );
+				var hasSessionID = ( typeof( json.sessionid ) != 'undefined' && json.sessionid && json.sessionid.length > 1 );
+				var hasLoginID = ( typeof( json.loginid ) != 'undefined' && json.loginid && json.loginid.length > 1 );
 
 				if( json.result == '0' || hasSessionID || hasLoginID || json.result == 3 )
-				{	
+				{
+					// // console.log( 'Test2: We got a login.' );
+					
 					// See if we can start host integration
 					if( typeof( FriendBook ) != 'undefined' )
 						FriendBook.init();
-
+					
 					// Store username and password in local storage
-					if( r && self.loginUsername && self.loginPassword )
+					if( r && typeof( self.loginUsername ) != 'undefined' && self.loginUsername && self.loginPassword )
 					{
+						// // console.log( 'Test2: Setting localstorage username/pass' );
+						
 						window.localStorage.setItem( 'WorkspaceUsername', self.loginUsername );
 						window.localStorage.setItem( 'WorkspacePassword', self.loginPassword );
 					}
@@ -1037,23 +1124,49 @@ Workspace = {
 					Workspace.reloginInProgress = false;
 					Workspace.serverIsThere = true;
 					Workspace.workspaceIsDisconnected = false;
+					
 					var cl = function()
 					{
+						// console.log( 'Test2: Running callback.' );
 						t.loginCall = null;
 						if( callback && typeof( callback ) == 'function' )
 							callback( true, serveranswer );
 					}
+					
+					// // console.log( 'Test2: Initializing user workspace.' );
+					
 					return Workspace.initUserWorkspace( json, cl, ev );
 				}
+				// Could not log in
 				else
 				{
+					// // console.log( 'Test2: Removing WorkspaceUsername/Password from local storage.' );
+					
 					// Remove from localstorage
 					window.localStorage.removeItem( 'WorkspaceUsername' );
 					window.localStorage.removeItem( 'WorkspacePassword' );
 					
+					// Session is totally dead - go back to login screen
+					if( triedWithSession )
+					{
+						console.log( '[Workspace] Logged out due to expired session and erroneous username and password.' );
+						if( window.friendApp && friendApp.exit )
+							friendApp.exit();
+						else Workspace.logout();
+						return;
+					}
+					
 					Workspace.reloginInProgress = false;
+					
 					if( t.loginPrompt )
+					{
 						t.loginPrompt.sendMessage( { command: 'error', other: 'test' } );
+					}
+					else
+					{
+						//Alert( 'Test1: We are dead in the water.', 'Dead dead dead.' );
+					}
+					
 					if( callback && typeof( callback ) == 'function' ) callback( false, serveranswer );
 
 				}
@@ -1083,6 +1196,27 @@ Workspace = {
 
 		return 0;
 	},
+	rememberKeys: function()
+	{
+		if( this.encryption.keys.client )
+		{
+			//console.log( 'Remembering.' );
+			ApplicationStorage.save( 
+				{
+					privatekey  : this.encryption.keys.client.privatekey,
+					publickey   : this.encryption.keys.client.publickey,
+					recoverykey : this.encryption.keys.client.recoverykey
+				},
+				{
+					applicationName : 'Workspace' 
+				} 
+			);
+			if( window.ScreenOverlay )
+				ScreenOverlay.addDebug( 'Keys remembered' );
+			return true;
+		}
+		return false;
+	},
 	showDesktop: function()
 	{
 		// View desktop
@@ -1097,15 +1231,20 @@ Workspace = {
 	},
 	initUserWorkspace: function( json, callback, ev )
 	{
+		// console.log( 'Test2: Init user workspace.' );
+		
 		var _this = Workspace;
 
 		// Once we are done
 		function setupWorkspaceData( json, cb )
 		{
+			// console.log( 'Test2: Set it up.', json );
+			
 			// Ok, we're in
 			_this.sessionId = json.sessionid ? json.sessionid : null;
 			_this.userId    = json.userid;
 			_this.fullName  = json.fullname;
+			if( json.username ) _this.loginUsername = json.username;
 
 			// Relogin fix
 			document.body.classList.remove( 'Loading' );
@@ -1122,6 +1261,7 @@ Workspace = {
 			{
 				userdata.sessionId = _this.sessionId;
 				userdata.userId    = _this.userId;
+				userdata.loginUsername    = _this.loginUsername;
 				userdata.fullName  = _this.fullName;
 
 				ApplicationStorage.save( userdata, { applicationName : 'Workspace' } );
@@ -1135,7 +1275,10 @@ Workspace = {
 				{
 					document.body.removeChild( ge( 'SessionBlock' ) );
 				}
-				_this.renewAllSessionIds();
+				// console.log( 'Test2: Renewing all sessions.' );
+				
+				// We have renewed our session, make sure to set it and run ajax queue
+				_this.renewAllSessionIds( _this.sessionId );
 
 				// Call back!
 				if( cb ) cb();
@@ -1152,12 +1295,39 @@ Workspace = {
 				} );
 			}
 
+			// Make sure we have a public key for this user (depending on login interface)
+			// TODO: See if we actually need this (and it doesn't work properly)
+			/*if( window.friendApp )
+			{
+				var credentials = friendApp.getCredentials();
+				var info = Workspace.generateKeys( credentials.username, credentials.password );
+				var m = new Module( 'system' );
+				m.onExecuted = function( e, d )
+				{
+					// Call back!
+					if( cb ) cb();
+				}
+				m.execute( 'setuserpublickey', { publickey: info.publickey } );
+				return;
+			}*/
+
 			// Call back!
 			if( cb ) cb();
 		}
 
+		// Manipulate screen overlay
+		// (this will only be shown once!)
+		// TODO: Figure out if this is the right behavior in every case
+		//       implementation circumvents relogin issue
+		if( !Workspace.screenOverlayShown )
+		{
+			ScreenOverlay.show();
+			Workspace.screenOverlayShown = true;
+		}
+		
 		if( !this.userWorkspaceInitialized )
 		{
+			// console.log( 'Test2: Doing the initialization.' );
 			this.userWorkspaceInitialized = true;
 
 			// Loading remaining scripts
@@ -1183,17 +1353,22 @@ Workspace = {
 				'webclient/js/io/friendnetworkextension.js;' +
 				'webclient/js/io/friendnetworkdoor.js;' +
 				'webclient/js/io/friendnetworkapps.js;' +
+				'webclient/js/io/workspace_fileoperations.js;' + 
 				'webclient/js/io/DOS.js;' +
 				'webclient/3rdparty/favico.js/favico-0.3.10.min.js;' +
 				'webclient/js/gui/widget.js;' +
 				'webclient/js/gui/listview.js;' +
 				'webclient/js/gui/directoryview.js;' +
+				'webclient/js/io/directoryview_fileoperations.js;' +
 				'webclient/js/gui/menufactory.js;' +
 				'webclient/js/gui/workspace_menu.js;' +
 				'webclient/js/gui/deepestfield.js;' +
 				'webclient/js/gui/filedialog.js;' +
+				'webclient/js/gui/printdialog.js;' +
 				'webclient/js/gui/desklet.js;' +
 				'webclient/js/gui/calendar.js;' +
+				'webclient/js/gui/colorpicker.js;' +
+				'webclient/js/gui/workspace_tray.js;' +
 				'webclient/js/media/audio.js;' +
 				'webclient/js/io/p2p.js;' +
 				'webclient/js/io/request.js;' +
@@ -1208,13 +1383,19 @@ Workspace = {
 			{
 				// Start with expanding the workspace object
 				// TODO: If we have sessionid - verify it through ajax.
-				if( _this.sessionId )
+				// TODO: This block is only for already initialized workspace
+				if( _this.sessionId && _this.postInitialized )
 				{
+					//console.log( 'This is the session.:', _this.sessionId );
 					if( callback && typeof( callback ) == 'function' ) callback( true );
 					return true;
 				}
 
-				if( !json || !json.sessionid ) return false;
+				if( !json || !json.sessionid ) 
+				{
+					// console.log( 'Test2: Got in sessionid error.', json );
+					return false;
+				}
 
 				// Reset some options
 				if( ev && ev.shiftKey )
@@ -1249,7 +1430,15 @@ Workspace = {
 					// New translations
 					i18n_translations = [];
 					
-					var decoded = JSON.parse( d );
+					var decoded = false;
+					try
+					{
+						decoded = JSON.parse( d );
+					}
+					catch( e )
+					{
+						//console.log( 'This: ', d );
+					}
 
 					// Add it!
 					i18nClearLocale();
@@ -1310,53 +1499,59 @@ Workspace = {
 				// See if we have some theme settings
 				else
 				{
-					// As for body.Inside screens, use > 0.2secs
-					setTimeout( function()
-					{
-						var m = new Module( 'system' );
-						m.onExecuted = function( e, d )
-						{	
-							var m = new Module( 'system' );
-							m.onExecuted = function( ee, dd )
-							{
-						        if( ee != 'ok' )
-						        {
-						            ShowEula();
-								}
-					            afterEula( e );								
+					// Previously this was timeouted for 400 ms...
+					var m = new Module( 'system' );
+					m.onExecuted = function( e, d )
+					{	
+						/*var m = new Module( 'system' );
+						m.onExecuted = function( ee, dd )
+						{
+					        if( ee != 'ok' )
+					        {
+					            ShowEula();
 							}
-							m.execute( 'getsetting', {
-								setting: 'accepteula'
-							} );
-							
-							// When eula is displayed or not
-							function afterEula( e )
-							{
-								if( e == 'ok' )
-								{
-									var s = JSON.parse( d );
-									if( s.Theme && s.Theme.length )
-									{
-										_this.refreshTheme( s.Theme.toLowerCase(), false );
-									}
-									else
-									{
-										_this.refreshTheme( false, false );
-									}
-									_this.mimeTypes = s.Mimetypes;
-								}
-								else _this.refreshTheme( false, false );
-
-								if( _this.loginPrompt )
-								{
-									_this.loginPrompt.close();
-									_this.loginPrompt = false;
-								}
-								_this.init();
-							}
+				            afterEula( e );								
 						}
-						m.execute( 'usersettings' );
-					}, 400 );
+						m.execute( 'getsetting', {
+							setting: 'accepteula'
+						} );*/
+						afterEula( 'ok' );
+						
+						// When eula is displayed or not
+						function afterEula( e )
+						{
+							if( e == 'ok' )
+							{
+								var s = {};
+								try
+								{
+									s = JSON.parse( d );
+								}
+								catch( e )
+								{ 
+									s = {}; 
+								};
+								if( s && s.Theme && s.Theme.length )
+								{
+									_this.refreshTheme( s.Theme.toLowerCase(), false );
+								}
+								else
+								{
+									_this.refreshTheme( false, false );
+								}
+								_this.mimeTypes = s.Mimetypes;
+							}
+							else _this.refreshTheme( false, false );
+
+							if( _this.loginPrompt )
+							{
+								_this.loginPrompt.close();
+								_this.loginPrompt = false;
+							}
+							_this.init();
+						}
+					}
+					m.execute( 'usersettings' );
 				}
 				if( callback && typeof( callback ) == 'function' ) callback();
 				Workspace.postInit();
@@ -1395,4 +1590,14 @@ Workspace = {
 		Workspace.logoutURL = logoutURL;
 	}
 };
+
+window.onoffline = function()
+{
+	Workspace.workspaceIsDisconnected = true;
+}
+window.ononline = function()
+{
+	Workspace.workspaceIsDisconnected = false;
+}
+
 

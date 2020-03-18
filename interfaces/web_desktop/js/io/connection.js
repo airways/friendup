@@ -45,8 +45,12 @@ FriendConnection.prototype.request = function( conf, callback )
 		data : conf.data,
 	};
 	req = self.setId( req, conf );
-	self.sendMessage( req );
-	return reqId;
+	var result = self.sendMessage( req );
+	if( result ) 
+	{
+		return reqId;
+	}
+	return false;
 }
 
 FriendConnection.prototype.send = function( conf )
@@ -158,10 +162,12 @@ FriendConnection.prototype.connectWebSocket = function()
 	var url = self.wsProtocol + self.host;
 	if ( self.wsPort )
 		url += ':' + self.wsPort;
-	
-	
+
+
 	url += '/fcws';
-	
+
+console.log("Connect : " + url );
+
 	var conf = {
 		url : url,
 		sessionId : Workspace.sessionId,
@@ -190,6 +196,8 @@ FriendConnection.prototype.setId = function( event, conf )
 FriendConnection.prototype.onWsMessage = function( msg )
 {
 	var self = this;
+
+	//console.log("Message came: ", msg );
 	
 	if ( 'response' === msg.type )
 	{
@@ -239,7 +247,7 @@ FriendConnection.prototype.onWsMessage = function( msg )
 			}
 			else
 			{
-				console.log( 'Illegal message format.' );
+				console.log( 'Illegal message format.', msg );
 			}
 		}
 	}
@@ -272,7 +280,7 @@ FriendConnection.prototype.onWsState = function( e )
 FriendConnection.prototype.onWsEnd = function( e )
 {
 	var self = this;
-	//console.log( 'onWsEnd', e );
+	console.log( 'onWsEnd', e );
 	self.releaseWebSocket();
 	if ( self.onend )
 		self.onend( e );
@@ -294,17 +302,18 @@ FriendConnection.prototype.sendMessage = function( msg )
 	if ( !self.ws )
 	{
 		console.log( 'FriendConnection.sendMessage - no ws found, sending async', msg );
-		self.sendAsync( msg );
-		return;
+		return self.sendAsync( msg );
 	}
 	
-	self.ws.send( msg );
+	return self.ws.send( msg );
 }
 
+// TODO: Implement
 FriendConnection.prototype.sendAsync = function( msg )
 {
 	var self = this;
 	console.log( 'sendAsync - NYI', msg );
+	return false;
 }
 
 FriendConnection.prototype.setRequestCallback = function( callback )

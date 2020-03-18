@@ -31,8 +31,11 @@
 #include <unistd.h>
 #include <sys/statvfs.h>
 #include <util/murmurhash3.h>
+#include <errno.h>
 
-#if LOCFILE_USE_MMAP == 1
+#include <hardware/machine_info.h>
+
+#if LOCFILE_USE_MMAP == 0
 #include <sys/mman.h>
 #endif
 
@@ -74,7 +77,7 @@ static inline int LocFileRead( LocFile* file, FILE *fp, long long offset, long l
 		return -1;
 	}
 
-	file->lf_Buffer = (char *)FCalloc( size + 1, sizeof( char ) );
+	file->lf_Buffer = (char *)FMalloc( size + 1 );
 	if( file->lf_Buffer == NULL )
 	{
 		DEBUG("Cannot allocate memory for file\n");
@@ -83,7 +86,7 @@ static inline int LocFileRead( LocFile* file, FILE *fp, long long offset, long l
 	
 	file->lf_FileSize = size;
 	fseek( fp, offset, SEEK_SET );
-	int result = fread( file->lf_Buffer, 1, size, fp );
+	int result = fread( file->lf_Buffer, size, 1, fp );
 	if( result < size )
 	{
 		return result; 
@@ -109,7 +112,16 @@ LocFile* LocFileNew( char* path, unsigned int flags )
 	FILE* fp = fopen( path, "rb" );
 	if( fp == NULL )
 	{
-		Log( FLOG_ERROR, "Cannot open file %s (file does not exist?)..\n", path );
+		char *err = strerror( errno );
+		
+		Log( FLOG_ERROR, "Cannot open file %s, errno: %s\n", path, err );
+		if( err != NULL && strncmp( err, "Too many open files", 19 ) == 0 )
+		{
+			system("netstat -ptan | awk '{print $6 " " $7 }' | sort | uniq -c > netstat_raport.txt");
+			system("sudo lsof | grep FriendCo > lsof_report.txt");
+		
+			debugFD();
+		}
 		return NULL;
 	}
 	
@@ -127,18 +139,15 @@ LocFile* LocFileNew( char* path, unsigned int flags )
 		fclose( fp );
 		return NULL;
 	}
-	DEBUG("Read local file %s\n", path );
 	
 	LocFile* fo = (LocFile*) FCalloc( 1, sizeof(LocFile) );
 	if( fo != NULL )
 	{
 		fo->lf_PathLength = strlen( path );
 		fo->lf_Path = StringDuplicateN( path, fo->lf_PathLength );
-		fo->lf_Filename = StringDuplicate( GetFileNamePtr( path, fo->lf_PathLength ) );
+		//fo->lf_Filename = StringDuplicate( GetFileNamePtr( path, fo->lf_PathLength ) );
 		
 		MURMURHASH3( fo->lf_Path, fo->lf_PathLength, fo->hash );
-		
-		DEBUG("PATH: %s\n", fo->lf_Path );
 		
 		memcpy(  &(fo->lf_Info),  &st, sizeof( struct stat) );
 
@@ -204,7 +213,7 @@ LocFile* LocFileNewFromBuf( char* path, BufString *bs )
 		//fo->lf_Filename = StringDuplicateN( path, fo->lf_PathLength );//StringDuplicate( GetFileNamePtr( path, len ) );
 		MURMURHASH3( fo->lf_Path, fo->lf_PathLength, fo->hash );
 		
-		DEBUG("PATH: %s \n", fo->lf_Path );
+		//DEBUG("PATH: %s \n", fo->lf_Path );
 
 		fo->lf_FileSize = bs->bs_Size;
 		
@@ -231,7 +240,7 @@ LocFile* LocFileNewFromBuf( char* path, BufString *bs )
  */
 int LocFileReload( LocFile *file, char *path )
 {
-	DEBUG("File %s will be reloaded\n", path );
+	//DEBUG("File %s will be reloaded\n", path );
 	
 	if( file->lf_Buffer )
 	{
@@ -278,12 +287,13 @@ void LocFileDelete( LocFile* file )
 	{
 		FERROR("Cannot free file which doesnt exist\n");
 	}
-	
+	/*
 	if( file->lf_Filename != NULL )
 	{
 		FFree( file->lf_Filename );
 		file->lf_Filename = NULL;
 	}
+	*/
 	/*
 	if( file->lf_Fp )
 	{
